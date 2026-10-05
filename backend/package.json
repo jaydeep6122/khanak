@@ -1,0 +1,41 @@
+{
+  "name": "khanak-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Khanak API: brick kiln accounts for workers, brick stock, sales and trucks",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --runInBand",
+    "test:coverage": "NODE_OPTIONS='--experimental-vm-modules' jest --runInBand --coverage",
+    "migrate": "node-pg-migrate up -m migrations",
+    "migrate:down": "node-pg-migrate down -m migrations",
+    "migrate:create": "node-pg-migrate create -m migrations -j js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "decimal.js": "^10.6.0",
+    "dotenv": "^17.4.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.11.0",
+    "node-pg-migrate": "^8.0.4",
+    "nodemailer": "^10.0.10",
+    "pg": "^8.23.0",
+    "winston": "^3.19.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
