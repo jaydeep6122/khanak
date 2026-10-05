@@ -57,20 +57,23 @@ describe("a supervisor running the kiln", () => {
   });
 
   test("the supervisor enters a count at the set rates, but cannot set amounts", async () => {
+    const [kiln] = data(await s.get("/kilns", undefined, 200));
     const body = {
       counted_on: today(),
       reason: "kiln_by_workers",
       quantity: 15000,
       molder_id: ramesh.id,
-      groups: [{ work_type_id: types.stacking.id, workers: [{ worker_id: mahesh.id }] }],
+      kiln_id: kiln.id,
+      groups: [{ work_type_id: types.kiln_loading.id, workers: [{ worker_id: mahesh.id }] }],
     };
     const count = data(await s.post("/brick-counts", body, 201));
-    expect(count.groups[0].workers[0].amount).toBe("375.00");
+    expect(count).toMatchObject({ kiln_name: "Bhatho 1" });
+    expect(count.groups[0].workers[0].amount).toBe("1500.00");
 
     await s.post("/brick-counts", { ...body, molder_amount: 99999 }, 403);
     await s.post(
       "/brick-counts",
-      { ...body, groups: [{ work_type_id: types.stacking.id, total_amount: 5000, workers: [{ worker_id: mahesh.id }] }] },
+      { ...body, groups: [{ work_type_id: types.kiln_loading.id, total_amount: 5000, workers: [{ worker_id: mahesh.id }] }] },
       403,
     );
   });
@@ -102,7 +105,7 @@ describe("a supervisor running the kiln", () => {
 
     // Their own account is open to them.
     const own = await s.get(`/workers/${mahesh.id}/ledger`, undefined, 200);
-    expect(own.body.balance).toBe("375.00");
+    expect(own.body.balance).toBe("1500.00");
 
     await s.get("/reports/summary", undefined, 403);
     await s.get("/reports/stock", undefined, 403);

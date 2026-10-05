@@ -20,7 +20,10 @@ export async function workerBalance(db, factoryId, workerId) {
   return (await workerBalances(db, factoryId, [workerId])).get(workerId) ?? "0.00";
 }
 
-/** Bricks in each stage: raw (kachi), kiln (bhatha) and fired (pakki). */
+/**
+ * Bricks in each stage: raw (kachi), kiln (in all kilns together) and fired
+ * (pakki), and what is in each kiln.
+ */
 export async function brickStock(db, factoryId) {
   const { rows } = await db.query(
     `SELECT stage, COALESCE(sum(quantity), 0)::bigint AS quantity
@@ -29,18 +32,35 @@ export async function brickStock(db, factoryId) {
   );
   const stock = { raw: 0, kiln: 0, fired: 0 };
   for (const row of rows) stock[row.stage] = Number(row.quantity);
+
+  const { rows: kilns } = await db.query(
+    `SELECT k.id, k.name, k.is_active, COALESCE(sum(m.quantity), 0)::bigint AS quantity
+     FROM kilns k
+     LEFT JOIN brick_movements m ON m.kiln_id = k.id
+     WHERE k.factory_id = $1
+     GROUP BY k.id
+     ORDER BY k.created_at`,
+    [factoryId],
+  );
+  stock.kilns = kilns.map((kiln) => ({ ...kiln, quantity: Number(kiln.quantity) }));
   return stock;
 }
 
 /**
- * Stock never stops an entry: counts are sometimes off. A stage that went
- * below zero comes back as a warning the app shows, so the count can be fixed.
+ * Stock never stops an entry: counts are sometimes off. A stage, or a kiln,
+ * that went below zero comes back as a warning the app shows, so the count
+ * can be fixed.
  */
 export async function stockWarnings(db, factoryId) {
-  const stock = await brickStock(db, factoryId);
-  return Object.entries(stock)
-    .filter(([, quantity]) => quantity < 0)
-    .map(([stage, quantity]) => ({ code: "negative_stock", stage, quantity }));
+  const { kilns, ...stages } = await brickStock(db, factoryId);
+  return [
+    ...Object.entries(stages)
+      .filter(([stage, quantity]) => stage !== "kiln" && quantity < 0)
+      .map(([stage, quantity]) => ({ code: "negative_stock", stage, quantity })),
+    ...kilns
+      .filter((kiln) => kiln.quantity < 0)
+      .map((kiln) => ({ code: "negative_stock", stage: "kiln", kiln_id: kiln.id, kiln_name: kiln.name, quantity: kiln.quantity })),
+  ];
 }
 
 /**

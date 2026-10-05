@@ -5,6 +5,7 @@ describe("an ordinary season", () => {
   let f;
   let types;
   let ramesh, dinesh, jagdish, mahesh, kishan, n1, n2;
+  let kiln;
 
   beforeAll(async () => {
     const owner = await signup({ name: "Papa" });
@@ -18,6 +19,7 @@ describe("an ordinary season", () => {
     kishan = await addWorker(f, "Kishan");
     n1 = await addWorker(f, "Nikasi 1");
     n2 = await addWorker(f, "Nikasi 2");
+    [kiln] = data(await f.get("/kilns", undefined, 200));
   });
 
   afterAll(closeDb);
@@ -40,10 +42,10 @@ describe("an ordinary season", () => {
     );
     expect(data(res).molder_pay).toMatchObject({ worker_id: ramesh.id, rate: "550.00", amount: "9900.00" });
     expect(await balanceOf(f, ramesh.id)).toBe("4900.00");
-    expect(data(await f.get("/reports/stock", undefined, 200))).toEqual({ raw: 18000, kiln: 0, fired: 0 });
+    expect(data(await f.get("/reports/stock", undefined, 200))).toMatchObject({ raw: 18000, kiln: 0, fired: 0 });
   });
 
-  test("already counted bricks going into the kiln pay the loaders and khadkaniyo, not the molder", async () => {
+  test("already counted bricks going into the kiln pay the loaders, not the molder", async () => {
     const res = await f.post(
       "/brick-counts",
       {
@@ -51,9 +53,9 @@ describe("an ordinary season", () => {
         reason: "kiln_by_workers",
         quantity: 18000,
         already_counted: true,
+        kiln_id: kiln.id,
         groups: [
           { work_type_id: types.kiln_loading.id, workers: [{ worker_id: dinesh.id }, { worker_id: jagdish.id }] },
-          { work_type_id: types.stacking.id, workers: [{ worker_id: mahesh.id }] },
         ],
       },
       201,
@@ -66,8 +68,20 @@ describe("an ordinary season", () => {
     });
     expect(await balanceOf(f, ramesh.id)).toBe("4900.00");
     expect(await balanceOf(f, dinesh.id)).toBe("900.00");
-    expect(await balanceOf(f, mahesh.id)).toBe("450.00");
-    expect(data(await f.get("/reports/stock", undefined, 200))).toEqual({ raw: 0, kiln: 18000, fired: 0 });
+    const stock = data(await f.get("/reports/stock", undefined, 200));
+    expect(stock).toMatchObject({ raw: 0, kiln: 18000, fired: 0 });
+    expect(stock.kilns).toEqual([expect.objectContaining({ id: kiln.id, name: "Bhatho 1", quantity: 18000 })]);
+  });
+
+  test("khadkaniya are paid by hand, per lakh bricks stacked", async () => {
+    const entry = data(
+      await f.post(
+        "/work-entries",
+        { worker_id: mahesh.id, work_type_id: types.stacking.id, entry_date: daysAgo(12), quantity: 18000 },
+        201,
+      ),
+    );
+    expect(entry).toMatchObject({ rate: "2500.00", amount: "450.00" });
   });
 
   test("new bricks carried to the kiln by truck", async () => {
@@ -83,9 +97,9 @@ describe("an ordinary season", () => {
         molder_id: ramesh.id,
         truck_id: truck.id,
         trips: 5,
+        kiln_id: kiln.id,
         groups: [
           { work_type_id: types.kiln_loading.id, workers: [{ worker_id: dinesh.id }, { worker_id: jagdish.id }] },
-          { work_type_id: types.stacking.id, workers: [{ worker_id: mahesh.id }] },
         ],
       },
       201,
@@ -93,7 +107,6 @@ describe("an ordinary season", () => {
     expect(data(res)).toMatchObject({ truck_number: "GJ-05-XX-1234", trips: 5 });
     expect(await balanceOf(f, ramesh.id)).toBe("17000.00");
     expect(await balanceOf(f, dinesh.id)).toBe("2000.00");
-    expect(await balanceOf(f, mahesh.id)).toBe("1000.00");
     expect(data(await f.get("/reports/stock", undefined, 200)).kiln).toBe(40000);
   });
 
@@ -102,6 +115,7 @@ describe("an ordinary season", () => {
       "/kiln-unloadings",
       {
         unloaded_on: daysAgo(5),
+        kiln_id: kiln.id,
         quantity: 40000,
         groups: [
           {
@@ -115,7 +129,7 @@ describe("an ordinary season", () => {
     expect(data(res).groups[0]).toMatchObject({ total: "4800.00" });
     expect(data(res).warnings).toEqual([]);
     expect(await balanceOf(f, n1.id)).toBe("1200.00");
-    expect(data(await f.get("/reports/stock", undefined, 200))).toEqual({ raw: 0, kiln: 0, fired: 40000 });
+    expect(data(await f.get("/reports/stock", undefined, 200))).toMatchObject({ raw: 0, kiln: 0, fired: 40000 });
   });
 
   test("day work and a lump sum typed in by hand", async () => {
@@ -206,8 +220,11 @@ describe("an ordinary season", () => {
   });
 
   test("more bricks out than in the kiln is allowed, with a warning", async () => {
-    const res = await f.post("/kiln-unloadings", { unloaded_on: today(), quantity: 3000 }, 201);
-    expect(data(res).warnings).toEqual([{ code: "negative_stock", stage: "kiln", quantity: -3000 }]);
+    const res = await f.post("/kiln-unloadings", { unloaded_on: today(), kiln_id: kiln.id, quantity: 3000 }, 201);
+    expect(data(res).warnings).toEqual([
+      { code: "negative_stock", stage: "kiln", kiln_id: kiln.id, kiln_name: "Bhatho 1", quantity: -3000 },
+    ]);
+    await f.post("/kiln-unloadings", { unloaded_on: today(), quantity: 3000 }, 400);
     await f.post(`/kiln-unloadings/${data(res).id}/cancel`, {}, 200);
   });
 
@@ -235,8 +252,27 @@ describe("an ordinary season", () => {
         reason: "kiln_by_workers",
         quantity: 100,
         molder_id: ramesh.id,
+        kiln_id: kiln.id,
         groups: [{ work_type_id: types.daily.id, workers: [{ worker_id: kishan.id }] }],
       },
+      400,
+    );
+    // Into a kiln: the molder, who put them in and which kiln are all needed.
+    const intoKiln = {
+      counted_on: today(),
+      reason: "kiln_by_workers",
+      quantity: 100,
+      molder_id: ramesh.id,
+      kiln_id: kiln.id,
+      groups: [{ work_type_id: types.kiln_loading.id, workers: [{ worker_id: dinesh.id }] }],
+    };
+    await f.post("/brick-counts", { ...intoKiln, molder_id: undefined }, 400);
+    await f.post("/brick-counts", { ...intoKiln, groups: [] }, 400);
+    await f.post("/brick-counts", { ...intoKiln, kiln_id: undefined }, 400);
+    // Khadkaniya are not paid from a count.
+    await f.post(
+      "/brick-counts",
+      { ...intoKiln, groups: [{ work_type_id: types.stacking.id, workers: [{ worker_id: mahesh.id }] }] },
       400,
     );
   });
@@ -245,7 +281,7 @@ describe("an ordinary season", () => {
     const summary = data(await f.get("/reports/summary", undefined, 200));
     expect(summary.period.kind).toBe("season");
     // 18,500 dried (after the edit) - 18,000 into the kiln + 1,000 dried later
-    expect(summary.stock).toEqual({ raw: 1500, kiln: 0, fired: 40000 });
+    expect(summary.stock).toMatchObject({ raw: 1500, kiln: 0, fired: 40000 });
     expect(summary.bricks.made_in_period).toBe(41500);
     expect(Number(summary.workers.payable)).toBeGreaterThan(0);
   });

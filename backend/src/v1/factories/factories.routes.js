@@ -7,6 +7,7 @@ import { context, created, ok } from "../../utils/http.js";
 import brickCountsRouter from "../brick-counts/brick-counts.routes.js";
 import cashRouter from "../cash/cash.routes.js";
 import kilnUnloadingsRouter from "../kiln-unloadings/kiln-unloadings.routes.js";
+import kilnsRouter from "../kilns/kilns.routes.js";
 import periodsRouter from "../periods/periods.routes.js";
 import reportsRouter from "../reports/reports.routes.js";
 import trucksRouter from "../trucks/trucks.routes.js";
@@ -80,6 +81,7 @@ factory.use("/work-entries", workEntriesRouter);
 factory.use("/brick-counts", brickCountsRouter);
 factory.use("/kiln-unloadings", kilnUnloadingsRouter);
 factory.use("/trucks", trucksRouter);
+factory.use("/kilns", kilnsRouter);
 factory.use("/cash", cashRouter);
 factory.use("/reports", reportsRouter);
 

@@ -59,6 +59,7 @@ export async function createFactory(user, data) {
       "INSERT INTO factory_members (factory_id, user_id, role, added_by) VALUES ($1, $2, 'owner', $2)",
       [factory.id, user.id],
     );
+    await client.query("INSERT INTO kilns (factory_id, name) VALUES ($1, 'Bhatho 1')", [factory.id]);
     await insertRows(
       client,
       "work_types",

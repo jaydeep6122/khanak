@@ -30,6 +30,7 @@ const MOVEMENT_COLUMNS = [
   "period_id",
   "moved_on",
   "stage",
+  "kiln_id",
   "quantity",
   "brick_count_id",
   "kiln_unloading_id",
@@ -37,19 +38,15 @@ const MOVEMENT_COLUMNS = [
 
 /**
  * Where a count's bricks go. Counted on the drying ground (or the last count
- * of the season) they are raw stock; counted going into the kiln they are kiln
- * stock, and if an earlier count already had them, they leave raw stock.
+ * of the season) they are raw stock; counted going into a kiln they are that
+ * kiln's stock, and if an earlier count already had them, they leave raw stock.
  */
 export function countMovements(count) {
   if (count.reason === "drying" || count.reason === "final") {
     return [{ stage: "raw", quantity: count.quantity }];
   }
-  return count.already_counted
-    ? [
-        { stage: "raw", quantity: -count.quantity },
-        { stage: "kiln", quantity: count.quantity },
-      ]
-    : [{ stage: "kiln", quantity: count.quantity }];
+  const intoKiln = { stage: "kiln", kiln_id: count.kiln_id, quantity: count.quantity };
+  return count.already_counted ? [{ stage: "raw", quantity: -count.quantity }, intoKiln] : [intoKiln];
 }
 
 async function clearSource(client, column, sourceId) {
@@ -106,7 +103,7 @@ export async function postKilnUnloading(client, unloading, workRows) {
   const document = { ...unloading, date: unloading.unloaded_on };
   await writeWork(client, "kiln_unloading", "kiln_unloading_id", document, workRows);
   await writeMovements(client, "kiln_unloading_id", document, [
-    { stage: "kiln", quantity: -unloading.quantity },
+    { stage: "kiln", kiln_id: unloading.kiln_id, quantity: -unloading.quantity },
     { stage: "fired", quantity: unloading.quantity },
   ]);
 }

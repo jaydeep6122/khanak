@@ -30,6 +30,8 @@ export const brickCountSchema = z
     // the kiln: no molder pay, and they leave raw stock.
     already_counted: z.boolean().optional(),
     molder_amount: money().optional(),
+    // Which kiln the bricks went into; required when they went into one.
+    kiln_id: id.nullable().optional(),
     truck_id: id.nullable().optional(),
     trips: z.number().int().min(1).max(1000).nullable().optional(),
     groups: z.array(groupSchema).max(10).optional(),
@@ -48,9 +50,20 @@ export const brickCountSchema = z
     if (count.reason !== "kiln_by_truck" && (count.truck_id || count.trips)) {
       fail("truck_id", "A truck is only for bricks carried to the kiln by truck");
     }
+    // Bricks going into a kiln are always some molder's, put in by someone,
+    // into one kiln: none of the three may be left out.
+    if (kiln && !count.kiln_id) fail("kiln_id", "Which kiln did the bricks go into?");
+    if (!kiln && count.kiln_id) fail("kiln_id", "Only bricks going into a kiln have a kiln");
+    if (kiln && !(count.groups ?? []).some((group) => group.workers.length > 0)) {
+      fail("groups", "Who put the bricks into the kiln?");
+    }
+    if (!kiln && (count.groups ?? []).length > 0) {
+      fail("groups", "Only bricks going into a kiln pay a loading group");
+    }
   });
 
 export const listBrickCountsQuery = listQuery({
+  kiln_id: id.optional(),
   from: date.optional(),
   to: date.optional(),
   period_id: id.optional(),

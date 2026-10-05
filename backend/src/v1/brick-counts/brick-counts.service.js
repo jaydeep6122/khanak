@@ -18,7 +18,7 @@ import { ApiError } from "../../utils/ApiError.js";
 import { money } from "../../utils/money.js";
 
 const COUNT_COLUMNS = `c.id, c.period_id, c.counted_on, c.reason, c.quantity, c.molder_id,
-  c.already_counted, c.truck_id, c.trips, c.note, c.created_by, c.cancelled_at, c.cancel_reason,
+  c.already_counted, c.kiln_id, c.truck_id, c.trips, c.note, c.created_by, c.cancelled_at, c.cancel_reason,
   c.created_at, c.updated_at`;
 
 const notFound = () => new ApiError(404, "Not found");
@@ -29,10 +29,11 @@ export async function getBrickCount(db, ctx, countId) {
     rows: [count],
   } = await db.query(
     `SELECT ${COUNT_COLUMNS}, m.name AS molder_name, m.nickname AS molder_nickname,
-            t.number AS truck_number, u.name AS created_by_name
+            t.number AS truck_number, k.name AS kiln_name, u.name AS created_by_name
      FROM brick_counts c
      LEFT JOIN workers m ON m.id = c.molder_id
      LEFT JOIN trucks t ON t.id = c.truck_id
+     LEFT JOIN kilns k ON k.id = c.kiln_id
      LEFT JOIN users u ON u.id = c.created_by
      WHERE c.factory_id = $1 AND c.id = $2`,
     [ctx.factory.id, countId],
@@ -52,17 +53,19 @@ export async function listBrickCounts(ctx, query) {
     .addIf(query.period_id, "c.period_id = ?", query.period_id)
     .addIf(query.reason, "c.reason = ?", query.reason)
     .addIf(query.molder_id, "c.molder_id = ?", query.molder_id)
+    .addIf(query.kiln_id, "c.kiln_id = ?", query.kiln_id)
     .addIf(!query.include_cancelled, "c.cancelled_at IS NULL")
     // A supervisor sees only the counts they entered.
     .addIf(ctx.role === "supervisor", "c.created_by = ?", ctx.user.id);
 
   const { rows } = await pool.query(
     `SELECT ${COUNT_COLUMNS}, m.name AS molder_name, m.nickname AS molder_nickname,
-            u.name AS created_by_name,
+            k.name AS kiln_name, u.name AS created_by_name,
             (SELECT COALESCE(sum(e.amount), 0) FROM work_entries e WHERE e.brick_count_id = c.id) AS total_pay,
             COUNT(*) OVER () AS total_count
      FROM brick_counts c
      LEFT JOIN workers m ON m.id = c.molder_id
+     LEFT JOIN kilns k ON k.id = c.kiln_id
      LEFT JOIN users u ON u.id = c.created_by
      ${filters.where}
      ORDER BY c.counted_on DESC, c.created_at DESC
@@ -92,6 +95,20 @@ async function workRowsFor(client, ctx, data, saved, previous = null) {
       data.truck_id,
     ]);
     if (!rowCount) throw new ApiError(400, "Unknown truck_id");
+  }
+  if (data.kiln_id) {
+    const { rowCount } = await client.query("SELECT 1 FROM kilns WHERE factory_id = $1 AND id = $2", [
+      ctx.factory.id,
+      data.kiln_id,
+    ]);
+    if (!rowCount) throw new ApiError(400, "Unknown kiln_id");
+  }
+  // Khadkaniya and nikasi are paid elsewhere, never from a count.
+  for (const group of data.groups ?? []) {
+    const code = types.byId.get(group.work_type_id)?.code;
+    if (code === "stacking" || code === "unloading") {
+      throw new ApiError(400, "A count pays only the workers who put the bricks in");
+    }
   }
 
   const rateFor = rateLookup(saved);
@@ -136,6 +153,7 @@ const auditView = (count) => ({
   quantity: count.quantity,
   molder_id: count.molder_id,
   already_counted: count.already_counted,
+  kiln_id: count.kiln_id,
   truck_id: count.truck_id,
   trips: count.trips,
   note: count.note,
@@ -153,6 +171,7 @@ const fields = (data) => [
   data.quantity,
   data.already_counted ? null : data.molder_id,
   data.already_counted ?? false,
+  data.kiln_id ?? null,
   data.truck_id ?? null,
   data.trips ?? null,
   data.note ?? null,
@@ -167,9 +186,9 @@ export async function createBrickCount(ctx, data) {
       rows: [count],
     } = await client.query(
       `INSERT INTO brick_counts
-         (counted_on, reason, quantity, molder_id, already_counted, truck_id, trips, note,
+         (counted_on, reason, quantity, molder_id, already_counted, kiln_id, truck_id, trips, note,
           factory_id, period_id, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
       [...fields(data), ctx.factory.id, period.id, ctx.user.id],
     );
@@ -215,8 +234,8 @@ export async function updateBrickCount(ctx, countId, data) {
     } = await client.query(
       `UPDATE brick_counts
        SET counted_on = $1, reason = $2, quantity = $3, molder_id = $4, already_counted = $5,
-           truck_id = $6, trips = $7, note = $8, period_id = $9
-       WHERE id = $10
+           kiln_id = $6, truck_id = $7, trips = $8, note = $9, period_id = $10
+       WHERE id = $11
        RETURNING *`,
       [...fields(data), period.id, countId],
     );
