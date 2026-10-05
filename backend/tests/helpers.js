@@ -69,9 +69,12 @@ export async function setRates(f) {
   return byCode;
 }
 
+/** A worker; main_work is 'other' unless given (a molder also needs a rate). */
 export async function addWorker(f, name, extra = {}) {
-  return data(await f.post("/workers", { name, ...extra }, 201));
+  return data(await f.post("/workers", { name, main_work: "other", ...extra }, 201));
 }
+
+export const molder = (rate = 550) => ({ main_work: "molder", rate });
 
 export async function balanceOf(f, workerId) {
   return data(await f.get(`/workers/${workerId}/balance`, undefined, 200)).balance;

@@ -5,6 +5,7 @@ import {
   createFactory,
   data,
   factoryClient,
+  molder,
   pool,
   setRates,
   signup,
@@ -21,9 +22,9 @@ describe("a supervisor running the kiln", () => {
     factory = await createFactory(owner.auth);
     f = factoryClient(owner.auth, factory.id);
     types = await setRates(f);
-    ramesh = await addWorker(f, "Ramesh");
+    ramesh = await addWorker(f, "Ramesh", molder(550));
     dinesh = await addWorker(f, "Dinesh");
-    mahesh = await addWorker(f, "Mahesh", { nickname: "Khadkaniyo" });
+    mahesh = await addWorker(f, "Mahesh", { main_work: "stacker", nickname: "Khadkaniyo" });
 
     supervisorUser = await signup({ name: "Mahesh" });
     const member = data(

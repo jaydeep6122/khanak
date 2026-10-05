@@ -8,12 +8,13 @@ import { accrueSalaries } from "../../services/salaries.js";
 import { newShareToken } from "../../services/tokens.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { dec, money } from "../../utils/money.js";
+import { HAS_OWN_RATE, ownPayProblem } from "./workers.schemas.js";
 
-export const WORKER_COLUMNS = `id, name, nickname, village, phone, note, monthly_salary, salary_from,
-  is_active, left_on, share_enabled, created_at, updated_at`;
+export const WORKER_COLUMNS = `id, name, nickname, village, phone, note, main_work, rate,
+  monthly_salary, salary_from, is_active, left_on, share_enabled, created_at, updated_at`;
 
 // What a supervisor may see of other workers: enough to pick the right one.
-const SUPERVISOR_COLUMNS = "id, name, nickname, village, is_active";
+const SUPERVISOR_COLUMNS = "id, name, nickname, village, main_work, is_active";
 
 const TXN_COLUMNS = `id, worker_id, period_id, kind, txn_date, amount, cash_holder_id, note,
   created_by, cancelled_at, cancel_reason, created_at, updated_at`;
@@ -39,7 +40,7 @@ function assertMayRead(ctx, workerId) {
   if (isSupervisor(ctx) && ctx.member.worker_id !== workerId) throw notFound();
 }
 
-export async function listWorkers(ctx, { active, search }) {
+export async function listWorkers(ctx, { active, main_work, search }) {
   const supervisor = isSupervisor(ctx);
   const { rows } = await pool.query(
     `SELECT ${supervisor ? SUPERVISOR_COLUMNS : WORKER_COLUMNS}
@@ -47,8 +48,9 @@ export async function listWorkers(ctx, { active, search }) {
      WHERE factory_id = $1
        AND ($2::boolean IS NULL OR is_active = $2)
        AND ($3::text IS NULL OR name ILIKE $3 OR nickname ILIKE $3 OR village ILIKE $3)
+       AND ($4::text IS NULL OR main_work = $4)
      ORDER BY is_active DESC, lower(name), lower(coalesce(nickname, ''))`,
-    [ctx.factory.id, active ?? null, search ? likePattern(search) : null],
+    [ctx.factory.id, active ?? null, search ? likePattern(search) : null, main_work ?? null],
   );
   if (supervisor) return rows;
 
@@ -81,13 +83,15 @@ export async function createWorker(ctx, data) {
     const {
       rows: [worker],
     } = await client.query(
-      `INSERT INTO workers (factory_id, name, nickname, village, phone, note, monthly_salary, salary_from,
-                            share_token, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO workers (factory_id, name, main_work, rate, nickname, village, phone, note,
+                            monthly_salary, salary_from, share_token, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING ${WORKER_COLUMNS}`,
       [
         ctx.factory.id,
         data.name,
+        data.main_work,
+        data.rate ?? null,
         data.nickname ?? null,
         data.village ?? null,
         data.phone ?? null,
@@ -110,8 +114,25 @@ export async function updateWorker(ctx, workerId, data) {
     if ((merged.monthly_salary == null) !== (merged.salary_from == null)) {
       throw new ApiError(400, "Give both monthly_salary and salary_from, or neither");
     }
+    // A worker moved to group work loses their own rate.
+    if (!HAS_OWN_RATE.has(merged.main_work) && data.rate === undefined && before.rate != null) {
+      data = { ...data, rate: null };
+      merged.rate = null;
+    }
+    const problem = ownPayProblem(merged);
+    if (problem) throw new ApiError(400, `${problem.path}: ${problem.message}`);
 
-    const set = setClause(data, ["name", "nickname", "village", "phone", "note", "monthly_salary", "salary_from"]);
+    const set = setClause(data, [
+      "name",
+      "main_work",
+      "rate",
+      "nickname",
+      "village",
+      "phone",
+      "note",
+      "monthly_salary",
+      "salary_from",
+    ]);
     if (set.keys.length === 0) return before;
     const {
       rows: [after],

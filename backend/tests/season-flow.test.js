@@ -1,4 +1,4 @@
-import { addWorker, balanceOf, closeDb, createFactory, data, daysAgo, factoryClient, setRates, signup, today } from "./helpers.js";
+import { addWorker, balanceOf, closeDb, createFactory, data, daysAgo, factoryClient, molder, setRates, signup, today } from "./helpers.js";
 
 // The planning walk-through: one ordinary season at the owner's kiln.
 describe("an ordinary season", () => {
@@ -11,7 +11,7 @@ describe("an ordinary season", () => {
     const factory = await createFactory(owner.auth);
     f = factoryClient(owner.auth, factory.id);
     types = await setRates(f);
-    ramesh = await addWorker(f, "Ramesh");
+    ramesh = await addWorker(f, "Ramesh", molder(550));
     dinesh = await addWorker(f, "Dinesh");
     jagdish = await addWorker(f, "Jagdish");
     mahesh = await addWorker(f, "Mahesh");
@@ -151,8 +151,8 @@ describe("an ordinary season", () => {
     await f.post("/work-entries", { worker_id: kishan.id, work_type_id: types.salary.id, entry_date: today(), quantity: 1 }, 400);
   });
 
-  test("a rate change applies to new counts only, even when an old count is edited", async () => {
-    await f.patch(`/work-types/${types.molding.id}`, { rate: 600 }, 200);
+  test("a molder's new rate applies to new counts only, even when an old count is edited", async () => {
+    await f.patch(`/workers/${ramesh.id}`, { rate: 600 }, 200);
 
     const counts = data(await f.get("/brick-counts", { reason: "drying" }, 200));
     const drying = counts[0];

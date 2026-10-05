@@ -8,6 +8,7 @@ import {
   daysAgo,
   expectStatus,
   factoryClient,
+  molder,
   pool,
   request,
   setRates,
@@ -59,7 +60,7 @@ describe("seasons and the off-season", () => {
     const factory = await createFactory(owner.auth, { season_started_on: daysAgo(100) });
     f = factoryClient(owner.auth, factory.id);
     await setRates(f);
-    ramesh = await addWorker(f, "Ramesh");
+    ramesh = await addWorker(f, "Ramesh", molder(550));
   });
 
   test("ending the season opens the off-season; entries after it go there", async () => {
@@ -106,8 +107,8 @@ describe("a driver on a monthly salary", () => {
 
     const [y, m] = today().split("-").map(Number);
     const firstOfMonth = (back) => new Date(Date.UTC(y, m - 1 - back, 1)).toISOString().slice(0, 10);
-    const suresh = await addWorker(f, "Suresh", { monthly_salary: 15000, salary_from: firstOfMonth(3) });
-    await f.post("/workers", { name: "Half", monthly_salary: 15000 }, 400);
+    const suresh = await addWorker(f, "Suresh", { main_work: "driver", monthly_salary: 15000, salary_from: firstOfMonth(3) });
+    await f.post("/workers", { name: "Half", main_work: "driver", monthly_salary: 15000 }, 400);
 
     expect(await balanceOf(f, suresh.id)).toBe("45000.00");
     // Asking again writes nothing twice.
@@ -137,7 +138,7 @@ describe("a worker's own link", () => {
     const factory = await createFactory(owner.auth, { name: "Shree Bhatha" });
     f = factoryClient(owner.auth, factory.id);
     await setRates(f);
-    ramesh = await addWorker(f, "Ramesh", { village: "Bihar", phone: "9876543210" });
+    ramesh = await addWorker(f, "Ramesh", { ...molder(550), village: "Bihar", phone: "9876543210" });
     await f.post("/brick-counts", { counted_on: today(), reason: "drying", quantity: 10000, molder_id: ramesh.id }, 201);
     await f.post(`/workers/${ramesh.id}/transactions`, { kind: "advance", txn_date: today(), amount: 2000 }, 201);
   });

@@ -61,7 +61,10 @@ async function getEntry(db, factoryId, entryId) {
   return entry;
 }
 
-/** quantity, rate and amount for a hand-typed entry. `keptRate` is the rate an edited entry was made with. */
+/**
+ * quantity, rate and amount for a hand-typed entry. `keptRate` is the rate an
+ * edited entry was made with, kept while its worker and kind stay the same.
+ */
 async function priced(db, factoryId, data, keptRate) {
   const {
     rows: [type],
@@ -69,18 +72,22 @@ async function priced(db, factoryId, data, keptRate) {
   if (!type) throw new ApiError(400, "Unknown work_type_id");
   if (type.code === "salary") throw new ApiError(400, "Monthly salary is added by itself at the end of each month");
 
-  const { rowCount } = await db.query("SELECT 1 FROM workers WHERE factory_id = $1 AND id = $2", [
+  const {
+    rows: [worker],
+  } = await db.query("SELECT main_work, rate FROM workers WHERE factory_id = $1 AND id = $2", [
     factoryId,
     data.worker_id,
   ]);
-  if (!rowCount) throw new ApiError(400, "Unknown worker_id");
+  if (!worker) throw new ApiError(400, "Unknown worker_id");
 
   if (type.pay_unit === "lumpsum") {
     if (data.amount === undefined) throw new ApiError(400, `"${type.name}" is a lump sum: give the amount`);
     return { quantity: null, rate: null, amount: toMoney(data.amount) };
   }
   if (data.quantity === undefined) throw new ApiError(400, `"${type.name}" needs a quantity`);
-  const rate = keptRate ?? type.rate;
+  // A day worker's own rate, when they are paid for day work.
+  const ownRate = type.code === "daily" && worker.main_work === "daily" ? worker.rate : null;
+  const rate = keptRate ?? ownRate ?? type.rate;
   return {
     quantity: data.quantity,
     rate,
@@ -158,7 +165,8 @@ router.put("/:entryId", idParams("entryId"), validate(entrySchema), async (req, 
     const current = await lockManual(client, ctx.factory.id, entryId);
     const before = await getEntry(client, ctx.factory.id, entryId);
     const period = await periodFor(client, ctx.factory.id, data.entry_date);
-    const keptRate = current.work_type_id === data.work_type_id ? current.rate : undefined;
+    const keptRate =
+      current.work_type_id === data.work_type_id && current.worker_id === data.worker_id ? current.rate : undefined;
     const pay = await priced(client, ctx.factory.id, data, keptRate ?? undefined);
     await client.query(
       `UPDATE work_entries

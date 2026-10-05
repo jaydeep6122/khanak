@@ -74,9 +74,10 @@ export async function listBrickCounts(ctx, query) {
 
 /**
  * The molder's pay and every group's shares for one count. `saved` holds the
- * rates the count was first made with (empty for a new count).
+ * rates the count was first made with, and `previous` the count as it was
+ * (both empty for a new count).
  */
-async function workRowsFor(client, ctx, data, saved) {
+async function workRowsFor(client, ctx, data, saved, previous = null) {
   if (data.molder_amount !== undefined && !mayChangePay(ctx)) {
     throw new ApiError(403, "Only the owner or munim can change how much is paid");
   }
@@ -97,7 +98,7 @@ async function workRowsFor(client, ctx, data, saved) {
   const rows = [];
   if (!data.already_counted) {
     const molding = types.byCode.get("molding");
-    const rate = rateFor(molding);
+    const rate = await molderRate(client, ctx, data.molder_id, molding, saved, previous);
     rows.push({
       worker_id: data.molder_id,
       work_type_id: molding.id,
@@ -115,6 +116,18 @@ async function workRowsFor(client, ctx, data, saved) {
     }),
   );
   return rows;
+}
+
+/**
+ * Each molder has their own rate. An edited count keeps the rate it was made
+ * with, unless the bricks are now someone else's: then that molder's rate.
+ */
+async function molderRate(client, ctx, molderId, molding, saved, previous) {
+  if (previous?.molder_id === molderId && saved.has(molding.id)) return saved.get(molding.id);
+  const {
+    rows: [molder],
+  } = await client.query("SELECT rate FROM workers WHERE factory_id = $1 AND id = $2", [ctx.factory.id, molderId]);
+  return molder?.rate ?? molding.rate;
 }
 
 const auditView = (count) => ({
@@ -186,10 +199,16 @@ async function lockCount(client, ctx, countId) {
 /** Replaces the whole count; the pay and stock it made are written again. */
 export async function updateBrickCount(ctx, countId, data) {
   return withTransaction(async (client) => {
-    await lockCount(client, ctx, countId);
+    const previous = await lockCount(client, ctx, countId);
     const before = await getBrickCount(client, ctx, countId);
     const period = await periodFor(client, ctx.factory.id, data.counted_on);
-    const workRows = await workRowsFor(client, ctx, data, await savedRates(client, "brick_count_id", countId));
+    const workRows = await workRowsFor(
+      client,
+      ctx,
+      data,
+      await savedRates(client, "brick_count_id", countId),
+      previous,
+    );
 
     const {
       rows: [count],
