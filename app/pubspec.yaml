@@ -1,0 +1,44 @@
+name: khanak
+description: "Brick kiln accounts: workers, advances, brick counts and stock."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Networking
+  dio: ^5.7.0
+
+  # State Management
+  provider: ^6.1.2
+
+  # Local Storage
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  flutter_secure_storage: ^9.2.4
+
+  # Utilities
+  intl: ^0.20.2               # Date/currency formatting
+  another_flushbar: ^1.12.30  # Toast notifications
+  package_info_plus: ^9.0.1
+  url_launcher: ^6.3.1        # WhatsApp and phone calls
+  share_plus: ^12.0.2         # A worker's link through any app
+
+  # Localization
+  easy_localization: ^3.0.7   # Gujarati, Hindi, English
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/translations/
