@@ -24,13 +24,15 @@ import 'package:khanak/types/factory.dart';
 import 'package:khanak/types/work.dart';
 import 'package:khanak/types/worker.dart';
 
-/// Kept for the next count in this session: the khadkaniya rarely change.
-List<Worker> _lastStackers = [];
-
 /// A brick count ("ginti"). Bricks are counted only at a few moments: the
-/// drying ground is full, they go into the kiln (by workers or by truck), or
-/// the last count when the workers leave. One count pays the molder, the
-/// loaders and the khadkaniya together. With [countId] it edits that count.
+/// drying ground is full, they go into a kiln (by workers or by truck), or
+/// the last count when the workers leave.
+///
+/// Bricks going into a kiln are always some molder's, put in by some
+/// workers, into one kiln: the count cannot be saved without all three
+/// (no molder when an earlier count already paid for them). Khadkaniya are
+/// not paid here; their pay is typed in as other work. With [countId] it
+/// edits that count.
 class BrickCountFormScreen extends StatefulWidget {
   final String? countId;
 
@@ -51,16 +53,19 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
   bool _alreadyCounted = false;
   Worker? _molder;
   double? _molderAmount;
+  Kiln? _kiln;
   Truck? _truck;
   GroupDraft? _loaders;
-  GroupDraft? _stackers;
 
   /// Rates an edited count was made with, by work type id. A new count uses
   /// today's rates.
   final Map<String, double> _savedRates = {};
   BrickCount? _editing;
-  bool _loading = false;
+  bool _loading = true;
   bool _busy = false;
+
+  /// Set once save was tapped, so missing choices show in red.
+  bool _tried = false;
 
   @override
   void initState() {
@@ -80,24 +85,26 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
 
   Future<void> _load() async {
     final core = context.read<Core>();
-    setState(() => _loading = true);
     await Future.wait([
       core.factory.fetchWorkTypes(),
       core.factory.fetchTrucks(),
+      core.factory.fetchKilns(),
       core.worker.fetchWorkers(),
     ]);
+    final loading = core.factory.workType('kiln_loading');
+    if (loading != null) _loaders = GroupDraft(type: loading);
+
+    final activeKilns = _activeKilns(core);
+    if (activeKilns.length == 1) _kiln = activeKilns.first;
+
     if (widget.countId != null) {
       final count = await core.entry.fetchCount(widget.countId!);
       if (count != null) _fill(count, core);
-    } else {
-      _stackers = GroupDraft(
-        type: core.factory.workType('stacking')!,
-        workers: [..._lastStackers],
-      );
-      _loaders = GroupDraft(type: core.factory.workType('kiln_loading')!);
     }
     if (mounted) setState(() => _loading = false);
   }
+
+  List<Kiln> _activeKilns(Core core) => (core.factory.kilns.value ?? const <Kiln>[]).where((k) => k.isActive).toList();
 
   void _fill(BrickCount count, Core core) {
     _editing = count;
@@ -107,68 +114,39 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
     _quantityController.text = '${count.quantity}';
     _tripsController.text = count.trips == null ? '' : '${count.trips}';
     _noteController.text = count.note ?? '';
-    _molder =
-        core.worker.byId(count.molderId) ??
-        (count.molderId == null
-            ? null
-            : Worker(
-                id: count.molderId!,
-                name: count.molderName ?? '',
-                isActive: true,
-              ));
-    _truck = core.factory.trucks.value
-        ?.where((t) => t.id == count.truckId)
-        .firstOrNull;
+    _molder = core.worker.byId(count.molderId) ??
+        (count.molderId == null ? null : Worker(id: count.molderId!, name: count.molderName ?? '', isActive: true));
+    _truck = core.factory.trucks.value?.where((t) => t.id == count.truckId).firstOrNull;
+    _kiln = core.factory.kilns.value?.where((k) => k.id == count.kilnId).firstOrNull ??
+        (count.kilnId == null ? null : Kiln(id: count.kilnId!, name: count.kilnName ?? '', isActive: true));
+
     final molding = core.factory.workType('molding');
-    if (molding != null && count.molderRate != null) {
-      _savedRates[molding.id] = count.molderRate!;
-    }
+    if (molding != null && count.molderRate != null) _savedRates[molding.id] = count.molderRate!;
     // A molder paid other than by the rate had the amount set by hand.
     final byRate = count.quantity * (count.molderRate ?? 0) / 1000;
     if (count.molderPay != null && (count.molderPay! - byRate).abs() > 0.005) {
       _molderAmount = count.molderPay;
     }
 
-    GroupDraft draftOf(WorkGroup group) {
-      if (group.rate != null) _savedRates[group.workTypeId] = group.rate!;
-      final type = core.factory.workTypes.value!.firstWhere(
-        (t) => t.id == group.workTypeId,
-      );
-      final workers = [
-        for (final share in group.workers)
-          core.worker.byId(share.workerId) ??
-              Worker(id: share.workerId, name: share.name, isActive: true),
-      ];
-      final draft = GroupDraft(type: type, workers: workers);
-      final equal = splitEqually(group.total, workers.length);
-      for (var i = 0; i < group.workers.length; i++) {
-        if ((group.workers[i].amount - equal[i]).abs() > 0.001) {
-          draft.amounts[workers[i].id] = group.workers[i].amount;
-        }
-      }
-      return draft;
+    final group = count.groups.firstOrNull;
+    if (group == null) return;
+    if (group.rate != null) _savedRates[group.workTypeId] = group.rate!;
+    final type = core.factory.workTypes.value!.firstWhere((t) => t.id == group.workTypeId);
+    final workers = [
+      for (final share in group.workers)
+        core.worker.byId(share.workerId) ?? Worker(id: share.workerId, name: share.name, isActive: true),
+    ];
+    _loaders = GroupDraft(type: type, workers: workers);
+    final equal = splitEqually(group.total, workers.length);
+    for (var i = 0; i < group.workers.length; i++) {
+      if ((group.workers[i].amount - equal[i]).abs() > 0.001) _loaders!.amounts[workers[i].id] = group.workers[i].amount;
     }
-
-    final stacking = count.groups
-        .where((g) => g.workTypeCode == 'stacking')
-        .firstOrNull;
-    final loading = count.groups
-        .where((g) => g.workTypeCode != 'stacking')
-        .firstOrNull;
-    _stackers = stacking == null
-        ? GroupDraft(type: core.factory.workType('stacking')!)
-        : draftOf(stacking);
-    _loaders = loading == null
-        ? GroupDraft(type: core.factory.workType('kiln_loading')!)
-        : draftOf(loading);
   }
 
-  int get _bricks =>
-      int.tryParse(_quantityController.text.replaceAll(',', '')) ?? 0;
+  int get _bricks => int.tryParse(_quantityController.text.replaceAll(',', '')) ?? 0;
   int? get _trips => int.tryParse(_tripsController.text);
 
-  double? _rate(WorkType? type) =>
-      type == null ? null : (_savedRates[type.id] ?? type.rate);
+  double? _rate(WorkType? type) => type == null ? null : (_savedRates[type.id] ?? type.rate);
 
   /// Each molder has their own rate, as on the server: an edited count keeps
   /// the rate it was made with while the molder stays the same.
@@ -179,26 +157,17 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
   }
 
   /// Molding is paid per 1000 bricks.
-  double _molderPay(WorkType molding) =>
-      _molderAmount ?? _bricks * _molderRate(molding) / 1000;
+  double _molderPay(WorkType molding) => _molderAmount ?? _bricks * _molderRate(molding) / 1000;
 
-  /// Kinds of work a loading group can be paid as: per 1000 bricks or per trip.
-  List<WorkType> _loadingChoices(Core core) =>
-      (core.factory.workTypes.value ?? const [])
-          .where(
-            (t) =>
-                t.isActive &&
-                t.isGroup &&
-                t.code != 'stacking' &&
-                t.code != 'unloading',
-          )
-          .where(
-            (t) =>
-                t.payUnit == PayUnit.per1000 ||
-                (t.payUnit == PayUnit.perTrip &&
-                    _reason == CountReason.kilnByTruck),
-          )
-          .toList();
+  /// Kinds of work a loading group can be paid as: per 1000 bricks, or per
+  /// trip when the truck carried them.
+  List<WorkType> _loadingChoices(Core core) => (core.factory.workTypes.value ?? const <WorkType>[])
+      .where((t) => t.isActive && t.isGroup && t.code != 'stacking' && t.code != 'unloading')
+      .where((t) => t.payUnit == PayUnit.per1000 || (t.payUnit == PayUnit.perTrip && _reason == CountReason.kilnByTruck))
+      .toList();
+
+  bool get _needsMolder => !_alreadyCounted;
+  bool get _needsKiln => _reason.intoKiln;
 
   Future<void> _pickMolder() async {
     final worker = await pickWorker(context, title: 'pick_molder'.tr(), role: MainWork.molder);
@@ -206,9 +175,7 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
   }
 
   Future<void> _editMolderAmount(double current) async {
-    final controller = TextEditingController(
-      text: Formatters.formatDouble(current),
-    );
+    final controller = TextEditingController(text: Formatters.formatDouble(current));
     final value = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -221,52 +188,36 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
           decoration: const InputDecoration(prefixText: '₹ '),
         ),
         actions: [
-          if (_molderAmount != null)
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(''),
-              child: Text('use_rate'.tr()),
-            ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text('cancel'.tr()),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(controller.text.trim()),
-            child: Text('save'.tr()),
-          ),
+          if (_molderAmount != null) TextButton(onPressed: () => Navigator.of(context).pop(''), child: Text('use_rate'.tr())),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: Text('cancel'.tr())),
+          FilledButton(onPressed: () => Navigator.of(context).pop(controller.text.trim()), child: Text('save'.tr())),
         ],
       ),
     );
     controller.dispose();
     if (value == null) return;
-    setState(
-      () => _molderAmount = value.isEmpty ? null : double.tryParse(value),
-    );
+    setState(() => _molderAmount = value.isEmpty ? null : double.tryParse(value));
   }
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
-    if (!_formKey.currentState!.validate()) return;
+    setState(() => _tried = true);
+    final valid = _formKey.currentState!.validate();
     final core = context.read<Core>();
-    if (!_alreadyCounted && _molder == null) {
-      return showErrorToast('pick_molder_first'.tr());
-    }
-    if (_reason == CountReason.kilnByTruck && _truck == null) {
-      return showErrorToast('pick_truck_first'.tr());
-    }
+    final loaders = _loaders!;
+
+    // Every missing choice, in the order they appear on the screen.
+    if (_needsMolder && _molder == null) return showErrorToast('pick_molder_first'.tr());
+    if (_needsKiln && _kiln == null) return showErrorToast('pick_kiln_first'.tr());
+    if (_reason == CountReason.kilnByTruck && _truck == null) return showErrorToast('pick_truck_first'.tr());
+    if (_needsKiln && loaders.workers.isEmpty) return showErrorToast('pick_loaders_first'.tr());
+    if (!valid) return;
 
     final groups = <Map<String, dynamic>>[];
-    if (_reason.intoKiln) {
-      for (final group in [_loaders, _stackers]) {
-        if (group == null || group.workers.isEmpty) continue;
-        final total = group.total(
-          bricks: _bricks,
-          trips: _trips,
-          rate: _rate(group.type),
-        );
-        if (!group.fits(total)) return showErrorToast('shares_too_much'.tr());
-        groups.add(group.toJson(total));
-      }
+    if (_needsKiln) {
+      final total = loaders.total(bricks: _bricks, trips: _trips, rate: _rate(loaders.type));
+      if (!loaders.fits(total)) return showErrorToast('shares_too_much'.tr());
+      groups.add(loaders.toJson(total));
     }
 
     final data = {
@@ -274,13 +225,10 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
       'reason': _reason.value,
       'quantity': _bricks,
       'already_counted': _alreadyCounted,
-      if (!_alreadyCounted) 'molder_id': _molder!.id,
-      if (!_alreadyCounted && _molderAmount != null)
-        'molder_amount': _molderAmount!.toStringAsFixed(2),
-      if (_reason == CountReason.kilnByTruck) ...{
-        'truck_id': _truck!.id,
-        'trips': _trips,
-      },
+      if (_needsMolder) 'molder_id': _molder!.id,
+      if (_needsMolder && _molderAmount != null) 'molder_amount': _molderAmount!.toStringAsFixed(2),
+      if (_needsKiln) 'kiln_id': _kiln!.id,
+      if (_reason == CountReason.kilnByTruck) ...{'truck_id': _truck!.id, 'trips': _trips},
       'groups': groups,
       'note': _noteController.text.trim(),
     };
@@ -289,14 +237,8 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
     final saved = await core.entry.saveCount(data, countId: widget.countId);
     if (!mounted) return;
     setState(() => _busy = false);
-    if (saved == null) {
-      return showErrorToast(core.entry.error ?? 'error_generic'.tr());
-    }
+    if (saved == null) return showErrorToast(core.entry.error ?? 'error_generic'.tr());
 
-    if (_reason == CountReason.kilnByTruck ||
-        _reason == CountReason.kilnByWorkers) {
-      _lastStackers = [...?_stackers?.workers];
-    }
     showSuccessToast('count_saved'.tr());
     showStockWarnings(saved.warnings);
     Navigator.of(context).pop(true);
@@ -311,14 +253,9 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
     );
     if (reason == null || !mounted) return;
     final module = context.read<Core>().entry;
-    final done = await module.cancelCount(
-      widget.countId!,
-      reason: reason.isEmpty ? null : reason,
-    );
+    final done = await module.cancelCount(widget.countId!, reason: reason.isEmpty ? null : reason);
     if (!mounted) return;
-    if (done == null) {
-      return showErrorToast(module.error ?? 'error_generic'.tr());
-    }
+    if (done == null) return showErrorToast(module.error ?? 'error_generic'.tr());
     showSuccessToast('entry_cancelled'.tr());
     showStockWarnings(done.warnings);
     Navigator.of(context).pop(true);
@@ -330,39 +267,21 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
     final colors = context.colors;
     final molding = core.factory.workType('molding');
     final canChangeAmounts = !core.isSupervisor;
+    final title = widget.countId == null ? 'action_brick_count'.tr() : 'edit_count'.tr();
 
-    if (_loading ||
-        molding == null ||
-        (_reason.intoKiln && (_loaders == null || _stackers == null))) {
-      return Scaffold(
-        appBar: AppBar(title: Text('action_brick_count'.tr())),
-        body: const LoadingIndicator(),
-      );
+    if (_loading || molding == null || _loaders == null) {
+      return Scaffold(appBar: AppBar(title: Text(title)), body: const LoadingIndicator());
     }
 
+    final loaders = _loaders!;
     final molderPay = _molderPay(molding);
-    final loaderTotal = _loaders!.total(
-      bricks: _bricks,
-      trips: _trips,
-      rate: _rate(_loaders!.type),
-    );
-    final stackerTotal = _stackers!.total(
-      bricks: _bricks,
-      trips: _trips,
-      rate: _rate(_stackers!.type),
-    );
-    final total =
-        (_alreadyCounted ? 0.0 : molderPay) +
-        (_reason.intoKiln && _loaders!.workers.isNotEmpty ? loaderTotal : 0.0) +
-        (_reason.intoKiln && _stackers!.workers.isNotEmpty ? stackerTotal : 0.0);
+    final loaderTotal = loaders.total(bricks: _bricks, trips: _trips, rate: _rate(loaders.type));
+    final total = (_needsMolder ? molderPay : 0.0) + (_needsKiln && loaders.workers.isNotEmpty ? loaderTotal : 0.0);
+    final kilns = _activeKilns(core);
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.countId == null
-              ? 'action_brick_count'.tr()
-              : 'edit_count'.tr(),
-        ),
+        title: Text(title),
         actions: [
           if (widget.countId != null && _editing?.isCancelled == false)
             IconButton(
@@ -377,11 +296,7 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
         child: ListView(
           padding: const EdgeInsets.all(AppTheme.spaceLg),
           children: [
-            DateField(
-              label: 'date'.tr(),
-              value: _date,
-              onChanged: (d) => setState(() => _date = d),
-            ),
+            DateField(label: 'date'.tr(), value: _date, onChanged: (d) => setState(() => _date = d)),
             const SizedBox(height: AppTheme.spaceLg),
             FieldLabel('count_why'.tr()),
             ChoiceRow<CountReason>(
@@ -397,10 +312,9 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
               onSelected: (r) => setState(() {
                 _reason = r;
                 if (!r.intoKiln) _alreadyCounted = false;
-                if (r != CountReason.kilnByTruck &&
-                    _loaders!.type.payUnit == PayUnit.perTrip) {
-                  _loaders!.type = core.factory.workType('kiln_loading')!;
-                  _loaders!.amounts.clear();
+                if (r != CountReason.kilnByTruck && loaders.type.payUnit == PayUnit.perTrip) {
+                  loaders.type = core.factory.workType('kiln_loading')!;
+                  loaders.amounts.clear();
                 }
               }),
             ),
@@ -425,57 +339,38 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
               prefixIcon: Icons.grid_view_rounded,
               validator: Validators.bricks,
             ),
-            if (!_alreadyCounted) ...[
+
+            // 1. Whose bricks.
+            if (_needsMolder) ...[
               const SizedBox(height: AppTheme.spaceLg),
               FieldLabel('molder'.tr()),
-              AppCard(
+              _Choice(
+                missing: _tried && _molder == null,
                 onTap: _pickMolder,
-                child: Row(
-                  children: [
-                    if (_molder != null)
-                      InitialBadge(letter: _molder!.initial)
-                    else
-                      Icon(
-                        Icons.person_search_rounded,
-                        color: colors.primary,
-                        size: 32,
-                      ),
-                    const SizedBox(width: AppTheme.spaceMd),
-                    Expanded(
-                      child: Text(
-                        _molder?.displayName ?? 'pick_molder'.tr(),
-                        style: context.text.titleMedium?.copyWith(
-                          color: _molder == null ? colors.primary : null,
-                        ),
-                      ),
-                    ),
-                    if (_molder != null && _bricks > 0)
-                      InkWell(
-                        onTap: canChangeAmounts
-                            ? () => _editMolderAmount(molderPay)
-                            : null,
+                leading: _molder == null
+                    ? Icon(Icons.person_search_rounded, color: colors.primary, size: 32)
+                    : InitialBadge(letter: _molder!.initial),
+                text: _molder?.displayName ?? 'pick_molder'.tr(),
+                placeholder: _molder == null,
+                trailing: _molder != null && _bricks > 0
+                    ? InkWell(
+                        onTap: canChangeAmounts ? () => _editMolderAmount(molderPay) : null,
                         child: Padding(
                           padding: const EdgeInsets.all(AppTheme.spaceXs),
                           child: Text(
                             Formatters.formatCurrency(molderPay),
                             style: context.text.titleMedium?.copyWith(
-                              color: _molderAmount != null
-                                  ? colors.warning
-                                  : colors.ink,
+                              color: _molderAmount != null ? colors.warning : colors.ink,
                               fontWeight: FontWeight.w700,
                             ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
+                      )
+                    : null,
               ),
               if (_molder != null && _bricks > 0 && _molderAmount == null)
                 Padding(
-                  padding: const EdgeInsets.only(
-                    top: AppTheme.spaceXs,
-                    left: AppTheme.spaceXs,
-                  ),
+                  padding: const EdgeInsets.only(top: AppTheme.spaceXs, left: AppTheme.spaceXs),
                   child: Text(
                     'molder_pay_line'.tr(
                       namedArgs: {
@@ -487,54 +382,59 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
                   ),
                 ),
             ],
-            if (_reason == CountReason.kilnByTruck) ...[
+
+            if (_needsKiln) ...[
+              // 2. Which kiln.
               const SizedBox(height: AppTheme.spaceLg),
-              FieldLabel('truck'.tr()),
-              _TruckChoice(
-                trucks: (core.factory.trucks.value ?? const [])
-                    .where((t) => t.isActive)
-                    .toList(),
-                selected: _truck,
-                onSelected: (t) => setState(() => _truck = t),
-              ),
-              const SizedBox(height: AppTheme.spaceMd),
-              AppTextField(
-                controller: _tripsController,
-                labelText: 'trips'.tr(),
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                prefixIcon: Icons.repeat_rounded,
-                validator: (v) => (int.tryParse(v ?? '') ?? 0) > 0
-                    ? null
-                    : 'validation_trips'.tr(),
-              ),
-            ],
-            if (_reason.intoKiln) ...[
+              FieldLabel('which_kiln'.tr()),
+              if (kilns.isEmpty)
+                Text('no_kilns_yet'.tr(), style: context.text.bodyMedium?.copyWith(color: colors.danger))
+              else
+                ChoiceRow<Kiln>(
+                  options: kilns,
+                  selected: kilns.where((k) => k.id == _kiln?.id).firstOrNull,
+                  label: (k) => k.name,
+                  icon: (_) => Icons.local_fire_department_rounded,
+                  onSelected: (k) => setState(() => _kiln = k),
+                ),
+              if (_tried && _kiln == null) _Missing('pick_kiln_first'.tr()),
+
+              if (_reason == CountReason.kilnByTruck) ...[
+                const SizedBox(height: AppTheme.spaceLg),
+                FieldLabel('truck'.tr()),
+                _TruckChoice(
+                  trucks: (core.factory.trucks.value ?? const <Truck>[]).where((t) => t.isActive).toList(),
+                  selected: _truck,
+                  onSelected: (t) => setState(() => _truck = t),
+                ),
+                if (_tried && _truck == null) _Missing('pick_truck_first'.tr()),
+                const SizedBox(height: AppTheme.spaceMd),
+                AppTextField(
+                  controller: _tripsController,
+                  labelText: 'trips'.tr(),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  prefixIcon: Icons.repeat_rounded,
+                  validator: (v) => (int.tryParse(v ?? '') ?? 0) > 0 ? null : 'validation_trips'.tr(),
+                ),
+              ],
+
+              // 3. Who put them in.
               const SizedBox(height: AppTheme.spaceLg),
               GroupEditor(
                 title: 'loaders'.tr(),
-                group: _loaders!,
+                group: loaders,
                 role: MainWork.loader,
                 typeChoices: _loadingChoices(core),
                 bricks: _bricks,
                 trips: _trips,
-                rate: _rate(_loaders!.type),
+                rate: _rate(loaders.type),
                 canChangeAmounts: canChangeAmounts,
                 onChanged: () => setState(() {}),
               ),
-              const SizedBox(height: AppTheme.spaceMd),
-              GroupEditor(
-                title: 'stackers'.tr(),
-                group: _stackers!,
-                role: MainWork.stacker,
-                typeChoices: const [],
-                bricks: _bricks,
-                trips: _trips,
-                rate: _rate(_stackers!.type),
-                canChangeAmounts: canChangeAmounts,
-                onChanged: () => setState(() {}),
-              ),
+              if (_tried && loaders.workers.isEmpty) _Missing('pick_loaders_first'.tr()),
             ],
+
             const SizedBox(height: AppTheme.spaceLg),
             AppTextField(
               controller: _noteController,
@@ -543,8 +443,7 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
               textCapitalization: TextCapitalization.sentences,
             ),
             const SizedBox(height: AppTheme.spaceLg),
-            if (_bricks > 0)
-              PayLine(label: 'total_pay'.tr(), amount: total, strong: true),
+            if (_bricks > 0) PayLine(label: 'total_pay'.tr(), amount: total, strong: true),
             const SizedBox(height: AppTheme.spaceMd),
             AppButton(text: 'save'.tr(), isLoading: _busy, onPressed: _submit),
           ],
@@ -554,24 +453,73 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
   }
 }
 
+/// A required choice shown as a card; outlined in red once save was tried
+/// without it.
+class _Choice extends StatelessWidget {
+  final bool missing;
+  final VoidCallback onTap;
+  final Widget leading;
+  final String text;
+  final bool placeholder;
+  final Widget? trailing;
+
+  const _Choice({
+    required this.missing,
+    required this.onTap,
+    required this.leading,
+    required this.text,
+    required this.placeholder,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return AppCard(
+      onTap: onTap,
+      borderColor: missing ? colors.danger : null,
+      child: Row(
+        children: [
+          leading,
+          const SizedBox(width: AppTheme.spaceMd),
+          Expanded(
+            child: Text(
+              text,
+              style: context.text.titleMedium?.copyWith(color: placeholder ? colors.primary : null),
+            ),
+          ),
+          ?trailing,
+        ],
+      ),
+    );
+  }
+}
+
+class _Missing extends StatelessWidget {
+  final String text;
+
+  const _Missing(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: AppTheme.spaceXs, left: AppTheme.spaceXs),
+      child: Text(text, style: context.text.bodySmall?.copyWith(color: context.colors.danger)),
+    );
+  }
+}
+
 class _TruckChoice extends StatelessWidget {
   final List<Truck> trucks;
   final Truck? selected;
   final ValueChanged<Truck> onSelected;
 
-  const _TruckChoice({
-    required this.trucks,
-    required this.selected,
-    required this.onSelected,
-  });
+  const _TruckChoice({required this.trucks, required this.selected, required this.onSelected});
 
   @override
   Widget build(BuildContext context) {
     if (trucks.isEmpty) {
-      return Text(
-        'no_trucks_yet'.tr(),
-        style: context.text.bodyMedium?.copyWith(color: context.colors.danger),
-      );
+      return Text('no_trucks_yet'.tr(), style: context.text.bodyMedium?.copyWith(color: context.colors.danger));
     }
     return ChoiceRow<Truck>(
       options: trucks,

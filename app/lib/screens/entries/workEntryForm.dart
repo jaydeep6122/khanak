@@ -121,7 +121,14 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
 
   List<WorkType> _choices(Core core) => (core.factory.workTypes.value ?? const [])
       .where((t) => t.isActive && t.payUnit != PayUnit.perMonth)
-      .where((t) => t.code == 'daily' || t.code == 'lumpsum' || t.code == null || t.code == 'truck_loading')
+      .where(
+        (t) =>
+            t.code == 'daily' ||
+            t.code == 'lumpsum' ||
+            t.code == 'stacking' ||
+            t.code == 'truck_loading' ||
+            t.code == null,
+      )
       .toList();
 
   Future<void> _pickWorker() async {

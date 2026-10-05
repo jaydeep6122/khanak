@@ -234,13 +234,22 @@ class WorkGroup {
 /// for it): a stage went below zero.
 class StockWarning {
   final String stage;
+
+  /// Which kiln, for a kiln that went below zero.
+  final String? kilnName;
   final int quantity;
 
-  const StockWarning({required this.stage, required this.quantity});
+  const StockWarning({required this.stage, this.kilnName, required this.quantity});
 
   static List<StockWarning> listFrom(Object? value) => asMapList(value)
       .where((json) => json['code'] == 'negative_stock')
-      .map((json) => StockWarning(stage: asString(json['stage']), quantity: asInt(json['quantity'])))
+      .map(
+        (json) => StockWarning(
+          stage: asString(json['stage']),
+          kilnName: json['kiln_name'] as String?,
+          quantity: asInt(json['quantity']),
+        ),
+      )
       .toList();
 }
 
@@ -253,6 +262,10 @@ class BrickCount {
   final String? molderId;
   final String? molderName;
   final bool alreadyCounted;
+
+  /// The kiln they went into, for bricks counted into a kiln.
+  final String? kilnId;
+  final String? kilnName;
   final String? truckId;
   final String? truckNumber;
   final int? trips;
@@ -276,6 +289,8 @@ class BrickCount {
     this.molderId,
     this.molderName,
     required this.alreadyCounted,
+    this.kilnId,
+    this.kilnName,
     this.truckId,
     this.truckNumber,
     this.trips,
@@ -300,6 +315,8 @@ class BrickCount {
       molderId: json['molder_id'] as String?,
       molderName: json['molder_name'] as String?,
       alreadyCounted: asBool(json['already_counted']),
+      kilnId: json['kiln_id'] as String?,
+      kilnName: json['kiln_name'] as String?,
       truckId: json['truck_id'] as String?,
       truckNumber: json['truck_number'] as String?,
       trips: asIntOrNull(json['trips']),
@@ -324,6 +341,8 @@ class BrickCount {
 class KilnUnloading {
   final String id;
   final DateTime unloadedOn;
+  final String? kilnId;
+  final String? kilnName;
   final int quantity;
   final String? note;
   final String? createdBy;
@@ -336,6 +355,8 @@ class KilnUnloading {
   const KilnUnloading({
     required this.id,
     required this.unloadedOn,
+    this.kilnId,
+    this.kilnName,
     required this.quantity,
     this.note,
     this.createdBy,
@@ -349,6 +370,8 @@ class KilnUnloading {
   factory KilnUnloading.fromJson(Map<String, dynamic> json) => KilnUnloading(
     id: json['id'] as String,
     unloadedOn: asDate(json['unloaded_on']) ?? DateTime.now(),
+    kilnId: json['kiln_id'] as String?,
+    kilnName: json['kiln_name'] as String?,
     quantity: asInt(json['quantity']),
     note: json['note'] as String?,
     createdBy: json['created_by'] as String?,

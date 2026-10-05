@@ -179,3 +179,18 @@ class Truck {
 
   String get label => name == null || name!.isEmpty ? number : '$number · $name';
 }
+
+/// One of the factory's kilns (bhatha).
+class Kiln {
+  final String id;
+  final String name;
+  final bool isActive;
+
+  const Kiln({required this.id, required this.name, required this.isActive});
+
+  factory Kiln.fromJson(Map<String, dynamic> json) => Kiln(
+    id: json['id'] as String,
+    name: asString(json['name']),
+    isActive: asBool(json['is_active'], true),
+  );
+}

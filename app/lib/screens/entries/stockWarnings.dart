@@ -10,7 +10,7 @@ void showStockWarnings(List<StockWarning> warnings) {
   final lines = warnings.map(
     (w) => 'stock_negative'.tr(
       namedArgs: {
-        'stage': 'stock_${w.stage}'.tr(),
+        'stage': w.kilnName ?? 'stock_${w.stage}'.tr(),
         'quantity': Formatters.formatNumber(w.quantity.toDouble()),
       },
     ),

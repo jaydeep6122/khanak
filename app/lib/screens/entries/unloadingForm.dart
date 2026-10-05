@@ -16,6 +16,7 @@ import 'package:khanak/helpers/toastNotifications.dart';
 import 'package:khanak/helpers/validators.dart';
 import 'package:khanak/screens/entries/groupDraft.dart';
 import 'package:khanak/screens/entries/stockWarnings.dart';
+import 'package:khanak/types/factory.dart';
 import 'package:khanak/types/worker.dart';
 
 /// Fired bricks taken out of the kiln ("nikasi"): kiln stock down, fired
@@ -35,6 +36,9 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
   final _quantityController = TextEditingController();
   final _noteController = TextEditingController();
   DateTime _date = DateTime.now();
+
+  /// Which kiln the fired bricks came out of; required.
+  Kiln? _kiln;
   GroupDraft? _group;
   double? _savedRate;
   bool _cancelled = false;
@@ -57,15 +61,19 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
 
   Future<void> _load() async {
     final core = context.read<Core>();
-    await Future.wait([core.factory.fetchWorkTypes(), core.worker.fetchWorkers()]);
+    await Future.wait([core.factory.fetchWorkTypes(), core.factory.fetchKilns(), core.worker.fetchWorkers()]);
     final type = core.factory.workType('unloading');
     if (type != null) _group = GroupDraft(type: type);
+    final kilns = _activeKilns(core);
+    if (kilns.length == 1) _kiln = kilns.first;
 
     if (widget.unloadingId != null) {
       final unloading = await core.entry.fetchUnloading(widget.unloadingId!);
       if (unloading != null) {
         _date = unloading.unloadedOn;
         _cancelled = unloading.isCancelled;
+        _kiln = core.factory.kilns.value?.where((k) => k.id == unloading.kilnId).firstOrNull ??
+            (unloading.kilnId == null ? null : Kiln(id: unloading.kilnId!, name: unloading.kilnName ?? '', isActive: true));
         _quantityController.text = '${unloading.quantity}';
         _noteController.text = unloading.note ?? '';
         final group = unloading.groups.firstOrNull;
@@ -90,9 +98,13 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
 
   int get _bricks => int.tryParse(_quantityController.text) ?? 0;
 
+  List<Kiln> _activeKilns(Core core) => (core.factory.kilns.value ?? const <Kiln>[]).where((k) => k.isActive).toList();
+
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
-    if (!_formKey.currentState!.validate()) return;
+    final valid = _formKey.currentState!.validate();
+    if (_kiln == null) return showErrorToast('pick_kiln_first'.tr());
+    if (!valid) return;
     final group = _group!;
     final total = group.total(bricks: _bricks, rate: _savedRate ?? group.type.rate);
     if (!group.fits(total)) return showErrorToast('shares_too_much'.tr());
@@ -101,6 +113,7 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
     setState(() => _busy = true);
     final saved = await module.saveUnloading({
       'unloaded_on': apiDate(_date),
+      'kiln_id': _kiln!.id,
       'quantity': _bricks,
       'groups': [if (group.workers.isNotEmpty) group.toJson(total)],
       'note': _noteController.text.trim(),
@@ -155,6 +168,18 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
           padding: const EdgeInsets.all(AppTheme.spaceLg),
           children: [
             DateField(label: 'date'.tr(), value: _date, onChanged: (d) => setState(() => _date = d)),
+            const SizedBox(height: AppTheme.spaceLg),
+            FieldLabel('from_which_kiln'.tr()),
+            if (_activeKilns(core).isEmpty)
+              Text('no_kilns_yet'.tr(), style: context.text.bodyMedium?.copyWith(color: context.colors.danger))
+            else
+              ChoiceRow<Kiln>(
+                options: _activeKilns(core),
+                selected: _activeKilns(core).where((k) => k.id == _kiln?.id).firstOrNull,
+                label: (k) => k.name,
+                icon: (_) => Icons.local_fire_department_rounded,
+                onSelected: (k) => setState(() => _kiln = k),
+              ),
             const SizedBox(height: AppTheme.spaceLg),
             AppTextField(
               controller: _quantityController,

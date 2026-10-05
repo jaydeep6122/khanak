@@ -25,6 +25,7 @@ class FactoryModule extends CoreModule {
 
   final LoadState<List<WorkType>> workTypes = LoadState();
   final LoadState<List<Truck>> trucks = LoadState();
+  final LoadState<List<Kiln>> kilns = LoadState();
   final LoadState<List<Member>> members = LoadState();
   final LoadState<List<Period>> periods = LoadState();
 
@@ -70,6 +71,7 @@ class FactoryModule extends CoreModule {
     if (changed) {
       workTypes.reset();
       trucks.reset();
+      kilns.reset();
       members.reset();
       periods.reset();
       core.resetFactoryData();
@@ -168,6 +170,26 @@ class FactoryModule extends CoreModule {
     return true;
   }
 
+  // ---- Kilns ----
+
+  Future<List<Kiln>?> fetchKilns({bool refresh = false}) => loadValue(
+    kilns,
+    () async => (await Api.instance.factory.kilns(_selected!.id)).map(Kiln.fromJson).toList(),
+    refresh: refresh,
+  );
+
+  Future<bool> saveKiln({String? kilnId, required String name, bool? isActive}) async {
+    final data = {'name': name, 'is_active': ?isActive};
+    final json = await runSave(
+      () => kilnId == null
+          ? Api.instance.factory.createKiln(_selected!.id, data)
+          : Api.instance.factory.updateKiln(_selected!.id, kilnId, data),
+    );
+    if (json == null) return false;
+    await fetchKilns(refresh: true);
+    return true;
+  }
+
   // ---- Members ----
 
   Future<List<Member>?> fetchMembers({bool refresh = false}) => loadValue(
@@ -232,6 +254,7 @@ class FactoryModule extends CoreModule {
     _loadError = null;
     workTypes.reset();
     trucks.reset();
+    kilns.reset();
     members.reset();
     periods.reset();
   }

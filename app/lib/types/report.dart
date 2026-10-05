@@ -12,15 +12,28 @@ class BrickStock {
   /// Pakki: fired and taken out.
   final int fired;
 
-  const BrickStock({required this.raw, required this.kiln, required this.fired});
+  /// What is in each kiln.
+  final List<KilnStock> kilns;
+
+  const BrickStock({required this.raw, required this.kiln, required this.fired, this.kilns = const []});
 
   factory BrickStock.fromJson(Map<String, dynamic> json) => BrickStock(
     raw: asInt(json['raw']),
     kiln: asInt(json['kiln']),
     fired: asInt(json['fired']),
+    kilns: asMapList(json['kilns'])
+        .map((k) => KilnStock(name: asString(k['name']), quantity: asInt(k['quantity'])))
+        .toList(),
   );
 
   static const empty = BrickStock(raw: 0, kiln: 0, fired: 0);
+}
+
+class KilnStock {
+  final String name;
+  final int quantity;
+
+  const KilnStock({required this.name, required this.quantity});
 }
 
 /// The home screen's numbers.

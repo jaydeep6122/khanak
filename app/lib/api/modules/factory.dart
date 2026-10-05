@@ -96,4 +96,18 @@ class FactoryApi {
     String truckId,
     Map<String, dynamic> data,
   ) async => dataOf(await _dio.patch('${factoryPath(factoryId)}/trucks/$truckId', data: data));
+
+  // ---- Kilns ----
+
+  Future<List<Map<String, dynamic>>> kilns(String factoryId) async =>
+      listOf(await _dio.get('${factoryPath(factoryId)}/kilns'));
+
+  Future<Map<String, dynamic>> createKiln(String factoryId, Map<String, dynamic> data) async =>
+      dataOf(await _dio.post('${factoryPath(factoryId)}/kilns', data: data));
+
+  Future<Map<String, dynamic>> updateKiln(
+    String factoryId,
+    String kilnId,
+    Map<String, dynamic> data,
+  ) async => dataOf(await _dio.patch('${factoryPath(factoryId)}/kilns/$kilnId', data: data));
 }

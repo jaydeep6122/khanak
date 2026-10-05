@@ -16,6 +16,7 @@ import 'package:khanak/screens/cash/list.dart';
 import 'package:khanak/screens/factory/form.dart';
 import 'package:khanak/screens/factory/list.dart';
 import 'package:khanak/screens/more/activity.dart';
+import 'package:khanak/screens/more/kilns.dart';
 import 'package:khanak/screens/more/members.dart';
 import 'package:khanak/screens/more/season.dart';
 import 'package:khanak/screens/more/trucks.dart';
@@ -82,6 +83,7 @@ class MoreTab extends StatelessWidget {
               rows: [
                 _Row(Icons.price_change_outlined, 'rates'.tr(), 'rates_desc'.tr(), () => open(const RatesScreen())),
                 _Row(Icons.event_repeat_rounded, 'season'.tr(), 'season_desc'.tr(), () => open(const SeasonScreen())),
+                _Row(Icons.local_fire_department_outlined, 'kilns'.tr(), 'kilns_desc'.tr(), () => open(const KilnsScreen())),
                 _Row(Icons.local_shipping_outlined, 'trucks'.tr(), 'trucks_desc'.tr(), () => open(const TrucksScreen())),
                 _Row(Icons.manage_accounts_outlined, 'members'.tr(), 'members_desc'.tr(), () => open(const MembersScreen())),
               ],

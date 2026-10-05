@@ -82,6 +82,7 @@ class _EntriesTabState extends State<EntriesTab> {
                 subtitle: [
                   Formatters.formatDate(count.countedOn),
                   if (count.molderName != null) count.molderName!,
+                  if (count.kilnName != null) count.kilnName!,
                   if (count.alreadyCounted) 'already_counted_short'.tr(),
                   if (supervisor == false && count.createdByName != null) count.createdByName!,
                 ].join(' · '),
@@ -105,6 +106,7 @@ class _EntriesTabState extends State<EntriesTab> {
                 title: 'unloading_row'.tr(namedArgs: {'bricks': Formatters.formatNumber(unloading.quantity.toDouble())}),
                 subtitle: [
                   Formatters.formatDate(unloading.unloadedOn),
+                  if (unloading.kilnName != null) unloading.kilnName!,
                   if (supervisor == false && unloading.createdByName != null) unloading.createdByName!,
                 ].join(' · '),
                 amount: supervisor ? null : unloading.pay,

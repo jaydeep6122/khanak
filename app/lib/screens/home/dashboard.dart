@@ -239,6 +239,18 @@ class _Summary extends StatelessWidget {
                 Expanded(child: _Figure(label: 'stock_fired'.tr(), value: Formatters.formatNumber(summary.stock.fired.toDouble()))),
               ],
             ),
+            // With more than one kiln, what is in each.
+            if (summary.stock.kilns.length > 1) ...[
+              const SizedBox(height: AppTheme.spaceSm),
+              AppCard(
+                child: Column(
+                  children: [
+                    for (final kiln in summary.stock.kilns)
+                      _Line(label: kiln.name, value: Formatters.formatNumber(kiln.quantity.toDouble())),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: AppTheme.spaceSm),
             SectionHeader(title: summary.period?.kind == PeriodKind.offSeason ? 'this_off_season'.tr() : 'this_season'.tr()),
             AppCard(
