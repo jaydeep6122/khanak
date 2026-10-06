@@ -9,6 +9,7 @@ import 'package:khanak/components/workerPicker.dart';
 import 'package:khanak/global/constants.dart';
 import 'package:khanak/global/themes.dart';
 import 'package:khanak/helpers/formatters.dart';
+import 'package:khanak/helpers/toastNotifications.dart';
 import 'package:khanak/types/work.dart';
 import 'package:khanak/types/worker.dart';
 
@@ -27,10 +28,20 @@ List<double> splitEqually(double total, int count) {
 double? keptOrCurrentRate(double? saved, WorkType type) => (saved ?? 0) > 0 ? saved : type.rate;
 
 /// Before saving: a group paid by a rate needs one, unless every share was
-/// typed by hand. Asks for it when missing (see [ensureRate]) and returns
-/// false while it is still missing.
+/// typed by hand. Work at each worker's own rate needs every worker's own rate (set on
+/// the worker); another kind's rate is asked when missing (see
+/// [ensureRate]). Returns false while a rate is still missing.
 Future<bool> ensureGroupRate(BuildContext context, GroupDraft group, double? rate) async {
-  if (group.workers.isEmpty || group.paidByHand || !group.type.payUnit.hasRate || (rate ?? 0) > 0) return true;
+  if (group.workers.isEmpty || group.paidByHand) return true;
+  if (group.type.atOwnRate) {
+    // A supervisor does not see rates: the server checks them.
+    if (!canSetRates(context)) return true;
+    final missing = group.workers.where((w) => (group.rateOf(w) ?? 0) <= 0).firstOrNull;
+    if (missing == null) return true;
+    showErrorToast('worker_rate_missing'.tr(namedArgs: {'name': missing.name}));
+    return false;
+  }
+  if (!group.type.payUnit.hasRate || (rate ?? 0) > 0) return true;
   final updated = await ensureRate(context, group.type);
   if (updated == null) return false;
   group.type = updated;
@@ -38,42 +49,87 @@ Future<bool> ensureGroupRate(BuildContext context, GroupDraft group, double? rat
   return true;
 }
 
-/// One group of workers paid together while a count or unloading is being
-/// filled in: who they are, and any amounts the owner set by hand.
+/// Marks the shares of a saved [group] that were typed by hand: those that
+/// differ from what the rates give.
+void markHandSetShares(GroupDraft draft, WorkGroup group, {required int bricks, int? trips}) {
+  final byRate = draft.pay(bricks: bricks, trips: trips, rate: group.rate);
+  final byHand = draft.type.atOwnRate
+      ? [
+          for (var i = 0; i < group.workers.length; i++)
+            byRate[i] == null || (group.workers[i].amount - byRate[i]!).abs() > 0.001,
+        ]
+      : () {
+          final equal = splitEqually(group.total, group.workers.length);
+          return [for (var i = 0; i < group.workers.length; i++) (group.workers[i].amount - equal[i]).abs() > 0.001];
+        }();
+  for (var i = 0; i < group.workers.length && i < draft.workers.length; i++) {
+    if (byHand[i]) draft.amounts[draft.workers[i].id] = group.workers[i].amount;
+  }
+}
+
+/// Pay worked out to the paisa, like the server.
+double _paisa(double amount) => (amount * 100).round() / 100;
+
+/// One group of workers paid together while a count, unloading or sale is
+/// being filled in: who they are, and any amounts the owner set by hand.
+///
+/// Work at each worker's own rate shares the bricks equally and pays each worker their
+/// share at their own rate. Other work shares one total from the kind's
+/// rate.
 class GroupDraft {
   WorkType type;
   final List<Worker> workers;
 
-  /// Amounts set by hand, by worker id. The rest share what is left.
+  /// Amounts set by hand, by worker id.
   final Map<String, double> amounts;
 
-  GroupDraft({required this.type, List<Worker>? workers, Map<String, double>? amounts})
-    : workers = workers ?? [],
-      amounts = amounts ?? {};
+  /// The rate each worker was paid at when an edited entry was made, by
+  /// worker id (work per 1000 bricks). Kept while the worker stays in it.
+  final Map<String, double> savedRates;
 
-  /// What the whole group earns: from the rate, or the hand-set amounts when
+  GroupDraft({required this.type, List<Worker>? workers, Map<String, double>? amounts, Map<String, double>? savedRates})
+    : workers = workers ?? [],
+      amounts = amounts ?? {},
+      savedRates = savedRates ?? {};
+
+  bool get _atOwnRate => type.atOwnRate;
+
+  /// [worker]'s rate per 1000 bricks: the one an edited entry was made with,
+  /// otherwise theirs today. Null when not known.
+  double? rateOf(Worker worker) {
+    final saved = savedRates[worker.id] ?? 0;
+    return saved > 0 ? saved : worker.brickRate;
+  }
+
+  /// Each worker's pay, in the order picked. Per 1000 bricks, a share set by
+  /// hand leaves the others as they are, and a worker whose rate is not
+  /// known has no pay (null). Otherwise the hand-set shares come out of the
+  /// rate's total and the others share what is left.
+  List<double?> pay({required int bricks, int? trips, double? rate}) {
+    if (_atOwnRate) {
+      final share = workers.isEmpty ? 0 : bricks / workers.length;
+      return [
+        for (final w in workers)
+          amounts[w.id] ?? (rateOf(w) == null ? null : _paisa(type.payFor(share, rate: rateOf(w))!)),
+      ];
+    }
+    return shares(total(bricks: bricks, trips: trips, rate: rate));
+  }
+
+  /// What the whole group earns: from the rates, or the hand-set amounts when
   /// every worker has one.
   double total({required int bricks, int? trips, required double? rate}) {
-    if (workers.isNotEmpty && workers.every((w) => amounts.containsKey(w.id))) {
-      return workers.fold(0.0, (sum, w) => sum + amounts[w.id]!);
-    }
+    if (paidByHand) return workers.fold(0.0, (sum, w) => sum + amounts[w.id]!);
+    if (_atOwnRate) return pay(bricks: bricks).fold(0.0, (sum, amount) => sum + (amount ?? 0));
     final units = type.payUnit == PayUnit.perTrip ? (trips ?? 0) : bricks;
-    final withRate = WorkType(
-      id: type.id,
-      code: type.code,
-      name: type.name,
-      payUnit: type.payUnit,
-      rate: rate,
-      isGroup: true,
-      isActive: true,
-    );
-    return withRate.payFor(units) ?? 0;
+    return type.payFor(units, rate: rate) ?? 0;
   }
 
   /// Every worker's amount was typed by hand, so no rate is needed.
   bool get paidByHand => workers.isNotEmpty && workers.every((w) => amounts.containsKey(w.id));
 
-  /// Each worker's share, in the order picked.
+  /// Each worker's share of [total] (work at the kind's rate), in the order
+  /// picked.
   List<double> shares(double total) {
     final setByHand = workers.where((w) => amounts.containsKey(w.id)).fold(0.0, (sum, w) => sum + amounts[w.id]!);
     final others = workers.where((w) => !amounts.containsKey(w.id)).length;
@@ -82,16 +138,18 @@ class GroupDraft {
     return [for (final w in workers) amounts[w.id] ?? split[next++]];
   }
 
-  /// Hand-set amounts must leave something (or exactly nothing) for the rest.
+  /// Hand-set amounts must leave something (or exactly nothing) for the
+  /// rest. Per 1000 bricks, a share set by hand takes nothing from the others.
   bool fits(double total) {
+    if (_atOwnRate) return true;
     final setByHand = workers.where((w) => amounts.containsKey(w.id)).fold(0.0, (sum, w) => sum + amounts[w.id]!);
     final others = workers.length - workers.where((w) => amounts.containsKey(w.id)).length;
     return others == 0 || setByHand <= total + 0.001;
   }
 
   /// The group as the API takes it. Without hand-set amounts the server
-  /// splits the rate's total itself.
-  Map<String, dynamic> toJson(double total) {
+  /// works the pay out itself; with any, every worker's amount is sent.
+  Map<String, dynamic> toJson({required int bricks, int? trips, double? rate}) {
     if (amounts.isEmpty) {
       return {
         'work_type_id': type.id,
@@ -100,7 +158,7 @@ class GroupDraft {
         ],
       };
     }
-    final shares = this.shares(total);
+    final shares = [for (final amount in pay(bricks: bricks, trips: trips, rate: rate)) amount ?? 0.0];
     return {
       'work_type_id': type.id,
       'total_amount': shares.fold(0.0, (a, b) => a + b).toStringAsFixed(2),
@@ -145,16 +203,18 @@ class GroupEditor extends StatelessWidget {
   });
 
   /// No rate is set for this kind of work yet, so the group would earn
-  /// nothing.
-  bool get _rateMissing => group.type.payUnit.hasRate && (rate ?? 0) <= 0;
+  /// nothing. (Work per 1000 bricks is paid at each worker's own rate.)
+  bool get _rateMissing => group.type.payUnit.hasRate && !group.type.atOwnRate && (rate ?? 0) <= 0;
 
   Future<void> _pickWorkers(BuildContext context) async {
-    final picked = await pickWorkers(context, title: title, role: role, initial: group.workers);
+    // A worker paid by the day is never paid a group's share.
+    final picked = await pickWorkers(context, title: title, role: role, initial: group.workers, paidByDay: false);
     if (picked == null) return;
     group.workers
       ..clear()
       ..addAll(picked);
     group.amounts.removeWhere((id, _) => !picked.any((w) => w.id == id));
+    group.savedRates.removeWhere((id, _) => !picked.any((w) => w.id == id));
     onChanged();
     // The first time this kind of work is used, the owner sets its rate
     // right here instead of in a separate screen.
@@ -171,12 +231,12 @@ class GroupEditor extends StatelessWidget {
     onChanged();
   }
 
-  Future<void> _editAmount(BuildContext context, Worker worker, double current) async {
+  Future<void> _editAmount(BuildContext context, Worker worker, double? current) async {
     final value = await showAmountDialog(
       context,
       title: worker.name,
-      initialValue: Formatters.formatDouble(current),
-      helperText: 'share_hand_help'.tr(),
+      initialValue: current == null ? '' : Formatters.formatDouble(current),
+      helperText: group.type.atOwnRate ? null : 'share_hand_help'.tr(),
       resetText: group.amounts.containsKey(worker.id) ? 'share_equal'.tr() : null,
     );
     if (value == null) return;
@@ -193,9 +253,23 @@ class GroupEditor extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final total = group.total(bricks: bricks, trips: trips, rate: rate);
-    final shares = group.shares(total);
+    final shares = group.pay(bricks: bricks, trips: trips, rate: rate);
     final canSet = canSetRates(context);
     final empty = group.workers.isEmpty;
+    final atOwnRate = group.type.atOwnRate;
+
+    /// Per 1000 bricks: each worker's share of the bricks at their rate.
+    String? ownRateLine(Worker worker) {
+      if (!atOwnRate || !canSet) return null;
+      final own = group.rateOf(worker);
+      if (own == null) return 'worker_rate_not_set'.tr();
+      return 'worker_share_line'.tr(
+        namedArgs: {
+          'bricks': Formatters.formatCount(bricks / group.workers.length),
+          'rate': Formatters.formatCurrency(own),
+        },
+      );
+    }
 
     final rows = <Widget>[
       for (var i = 0; i < group.workers.length; i++)
@@ -205,8 +279,10 @@ class GroupEditor extends StatelessWidget {
           leading: InitialBadge(letter: group.workers[i].initial, size: 34),
           title: group.workers[i].displayName,
           // A share set by hand shows in amber; the others split the rest.
-          subtitle: group.amounts.containsKey(group.workers[i].id) ? 'share_set_by_hand'.tr() : null,
-          value: Formatters.formatCurrency(shares[i]),
+          subtitle: group.amounts.containsKey(group.workers[i].id)
+              ? 'share_set_by_hand'.tr()
+              : ownRateLine(group.workers[i]),
+          value: shares[i] == null ? '—' : Formatters.formatCurrency(shares[i]!),
           valueColor: group.amounts.containsKey(group.workers[i].id) ? colors.warning : null,
         ),
       GroupedRow(
@@ -244,11 +320,12 @@ class GroupEditor extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(child: Text(title, style: context.text.titleSmall)),
-                  if (!empty) Text(Formatters.formatCurrency(total), style: context.text.titleSmall),
+                  if (!empty && (total > 0 || !atOwnRate || canSet))
+                    Text(Formatters.formatCurrency(total), style: context.text.titleSmall),
                 ],
               ),
             ),
-            if (!empty && rate != null && rate! > 0)
+            if (!empty && !atOwnRate && rate != null && rate! > 0)
               // The owner or munim taps the rate to change it; the new rate
               // is used from now on.
               InkWell(

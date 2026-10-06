@@ -6,7 +6,16 @@ import { stockWarnings } from "../../services/ledger.js";
 import { partyBalance, resolveParty } from "../../services/parties.js";
 import { periodFor } from "../../services/periods.js";
 import { postSale } from "../../services/posting.js";
-import { assertNotPaidByDay, assertWorkersExist, groupRows, loadWorkTypes, rateLookup, readWork, savedRates } from "../../services/work-groups.js";
+import {
+  assertNotPaidByDay,
+  groupRows,
+  groupWorkerIds,
+  loadWorkers,
+  loadWorkTypes,
+  noSavedRates,
+  readWork,
+  savedRates,
+} from "../../services/work-groups.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { dec, money } from "../../utils/money.js";
 
@@ -86,7 +95,7 @@ async function assertBelongs(client, ctx, table, id, label) {
   if (!rowCount) throw new ApiError(400, `Unknown ${label}`);
 }
 
-/** The loading groups' pay. Truck loaders are paid per trip or per 1000 bricks. */
+/** The loading groups' pay: per trip at the rate for loading a vehicle, or by the bricks at each worker's own rate. */
 async function workRowsFor(client, ctx, data, saved) {
   const types = await loadWorkTypes(client, ctx.factory.id);
   for (const group of data.groups ?? []) {
@@ -95,18 +104,15 @@ async function workRowsFor(client, ctx, data, saved) {
       throw new ApiError(400, "A sale pays only the workers who loaded the bricks");
     }
   }
-  await assertWorkersExist(
-    client,
-    ctx.factory.id,
-    (data.groups ?? []).flatMap((group) => group.workers.map((worker) => worker.worker_id)),
-  );
-  await assertNotPaidByDay(client, ctx.factory.id, data.groups);
+  const workers = await loadWorkers(client, ctx.factory.id, groupWorkerIds(data.groups));
+  assertNotPaidByDay(data.groups, workers);
   return groupRows(data.groups, types, {
     bricks: data.quantity,
     // One trip unless more are given; a customer's own vehicle is one trip
     // as far as pay goes.
     trips: data.delivery === "own_truck" ? (data.trips ?? 1) : 1,
-    rateFor: rateLookup(saved),
+    saved,
+    workers,
     allowAmounts: true,
   });
 }
@@ -176,7 +182,7 @@ export async function createSale(ctx, data) {
   return withTransaction(async (client) => {
     const period = await periodFor(client, ctx.factory.id, data.sold_on);
     const fields = await saleFields(client, ctx, data);
-    const workRows = await workRowsFor(client, ctx, data, new Map());
+    const workRows = await workRowsFor(client, ctx, data, noSavedRates());
     const values = COLUMNS.map((column) => fields[column]);
     const {
       rows: [sale],

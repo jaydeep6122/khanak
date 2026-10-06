@@ -99,6 +99,8 @@ describe("a supervisor running the kiln", () => {
     const list = data(await s.get("/workers", undefined, 200));
     expect(list[0]).not.toHaveProperty("balance");
     expect(list[0]).not.toHaveProperty("phone");
+    expect(list[0]).not.toHaveProperty("rate");
+    expect(list[0]).toHaveProperty("rate_unit");
 
     // Before an advance: the balance number only.
     expect(data(await s.get(`/workers/${ramesh.id}/balance`, undefined, 200)).balance).toBe("-3750.00");
@@ -107,8 +109,8 @@ describe("a supervisor running the kiln", () => {
 
     // Their own account is open to them.
     const own = await s.get(`/workers/${mahesh.id}/ledger`, undefined, 200);
-    // ₹1,500 loading and ₹375 stacking (15,000 bricks at ₹2,500 a lakh).
-    expect(own.body.balance).toBe("1875.00");
+    // ₹1,500 loading and ₹1,500 stacking (15,000 bricks each, at his ₹100 per 1000).
+    expect(own.body.balance).toBe("3000.00");
 
     await s.get("/reports/summary", undefined, 403);
     await s.get("/reports/stock", undefined, 403);

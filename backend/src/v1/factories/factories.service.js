@@ -9,13 +9,15 @@ import { todayIst } from "../../utils/dates.js";
 
 const FACTORY_COLUMNS = "id, name, owner_name, phone, city, state, language, created_at, updated_at";
 
-// Every factory starts with these. Rates start at 0 and the app asks the
-// owner to set them; the app shows its own translated name for each code.
+// Every factory starts with these; the app shows its own translated name for
+// each code. Brick work (per 1000, no rate here) is paid at each worker's own
+// rate. Other rates start at 0 and the app asks for them the first time they
+// are needed.
 const DEFAULT_WORK_TYPES = [
-  { code: "molding", name: "Brick making", pay_unit: "per_1000", rate: "0", is_group: false },
-  { code: "kiln_loading", name: "Kiln loading", pay_unit: "per_1000", rate: "0", is_group: true },
-  { code: "stacking", name: "Kiln stacking and firing", pay_unit: "per_lakh", rate: "0", is_group: true },
-  { code: "unloading", name: "Kiln unloading", pay_unit: "per_1000", rate: "0", is_group: true },
+  { code: "molding", name: "Brick making", pay_unit: "per_1000", rate: null, is_group: false },
+  { code: "kiln_loading", name: "Kiln loading", pay_unit: "per_1000", rate: null, is_group: true },
+  { code: "stacking", name: "Kiln stacking and firing", pay_unit: "per_1000", rate: null, is_group: true },
+  { code: "unloading", name: "Kiln unloading", pay_unit: "per_1000", rate: null, is_group: true },
   { code: "truck_loading", name: "Truck loading", pay_unit: "per_trip", rate: "0", is_group: true },
   { code: "daily", name: "Day work", pay_unit: "per_day", rate: "0", is_group: false },
   { code: "salary", name: "Monthly salary", pay_unit: "per_month", rate: null, is_group: false },

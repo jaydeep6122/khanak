@@ -6,7 +6,6 @@ import 'package:khanak/helpers/json.dart';
 // not renamed one, the app shows its own translation instead.
 const _builtInNames = {
   'molding': 'Brick making',
-  'drying_carry': 'Carrying to drying',
   'kiln_loading': 'Kiln loading',
   'stacking': 'Kiln stacking and firing',
   'unloading': 'Kiln unloading',
@@ -25,14 +24,17 @@ String workTypeLabel(String? code, String name) =>
 class WorkType {
   final String id;
 
-  /// Built-in kinds: molding, drying_carry, kiln_loading, stacking, unloading,
+  /// Built-in kinds: molding, kiln_loading, stacking, unloading,
   /// truck_loading, daily, salary, lumpsum. Null for the owner's own.
   final String? code;
   final String name;
   final PayUnit payUnit;
+
+  /// Null for brick work paid at each worker's own rate (see [atOwnRate]).
   final double? rate;
 
-  /// One total shared by the workers who did it.
+  /// Done by a group of workers: at their own rates they share the bricks;
+  /// otherwise they share one total.
   final bool isGroup;
   final bool isActive;
 
@@ -58,9 +60,14 @@ class WorkType {
 
   String get label => workTypeLabel(code, name);
 
-  /// Pay for [units]: bricks, days or trips. Null for lump sums and salary.
-  double? payFor(num units) {
-    final r = rate;
+  /// Brick work per 1000 with no rate of its own (molding, loading, stacking,
+  /// nikasi): each worker is paid at their own rate.
+  bool get atOwnRate => payUnit == PayUnit.per1000 && rate == null;
+
+  /// Pay for [units] at [rate] (the kind's own unless given): bricks, days or
+  /// trips. Null for lump sums and salary.
+  double? payFor(num units, {double? rate}) {
+    final r = rate ?? this.rate;
     if (r == null) return null;
     return switch (payUnit) {
       PayUnit.per1000 => units * r / 1000,
@@ -147,9 +154,7 @@ class LedgerLine {
   /// Positive when the line adds to what the factory owes the worker.
   double get amount => credit - debit;
 
-  String get title => isWork
-      ? workTypeLabel(workTypeCode, workTypeName ?? '')
-      : txnKind!.displayName;
+  String get title => isWork ? workTypeLabel(workTypeCode, workTypeName ?? '') : txnKind!.displayName;
 }
 
 /// What a worker's account adds up to.
@@ -159,12 +164,7 @@ class LedgerTotals {
   final double settled;
   final double recovered;
 
-  const LedgerTotals({
-    required this.earned,
-    required this.advances,
-    required this.settled,
-    required this.recovered,
-  });
+  const LedgerTotals({required this.earned, required this.advances, required this.settled, required this.recovered});
 
   factory LedgerTotals.fromJson(Map<String, dynamic> json) => LedgerTotals(
     earned: asDouble(json['earned']),
@@ -181,19 +181,18 @@ class GroupShare {
   final String workerId;
   final String name;
   final String? nickname;
+
+  /// The rate this worker was paid at, for work per 1000 bricks.
+  final double? rate;
   final double amount;
 
-  const GroupShare({
-    required this.workerId,
-    required this.name,
-    this.nickname,
-    required this.amount,
-  });
+  const GroupShare({required this.workerId, required this.name, this.nickname, this.rate, required this.amount});
 
   factory GroupShare.fromJson(Map<String, dynamic> json) => GroupShare(
     workerId: json['worker_id'] as String,
     name: asString(json['name']),
     nickname: json['nickname'] as String?,
+    rate: asDoubleOrNull(json['rate']),
     amount: asDouble(json['amount']),
   );
 }

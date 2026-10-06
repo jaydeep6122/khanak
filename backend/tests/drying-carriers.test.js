@@ -1,4 +1,4 @@
-import { addWorker, balanceOf, closeDb, createFactory, data, factoryClient, molder, setRates, signup, today } from "./helpers.js";
+import { addWorker, balanceOf, closeDb, createFactory, data, factoryClient, molder, per1000, setRates, signup, today } from "./helpers.js";
 
 // Bricks reach the drying ground carried by workers or by truck, and whoever
 // carries them is paid, just like bricks going into a kiln.
@@ -13,11 +13,10 @@ describe("carrying bricks to dry", () => {
     const factory = await createFactory(owner.auth);
     f = factoryClient(owner.auth, factory.id);
     types = await setRates(f);
-    // Carrying to dry is paid at the one loading rate.
-    await f.patch(`/work-types/${types.kiln_loading.id}`, { rate: 60 }, 200);
     ramesh = await addWorker(f, "Ramesh", molder(550));
-    dinesh = await addWorker(f, "Dinesh");
-    jagdish = await addWorker(f, "Jagdish");
+    // Carrying to dry is paid like loading the kiln, at each worker's rate.
+    dinesh = await addWorker(f, "Dinesh", { main_work: "loader", ...per1000(60) });
+    jagdish = await addWorker(f, "Jagdish", { main_work: "loader", ...per1000(60) });
     truck = data(await f.post("/trucks", { number: "GJ05AB1111" }, 201));
   });
 
@@ -27,8 +26,8 @@ describe("carrying bricks to dry", () => {
     { work_type_id: workTypeId, workers: [{ worker_id: dinesh.id }, { worker_id: jagdish.id }] },
   ];
 
-  test("there is one loading rate, per 1000 and shared, for drying and the kiln alike", () => {
-    expect(types.kiln_loading).toMatchObject({ pay_unit: "per_1000", is_group: true });
+  test("there is one kind of loading, per 1000 at each worker's rate, for drying and the kiln alike", () => {
+    expect(types.kiln_loading).toMatchObject({ pay_unit: "per_1000", rate: null, is_group: true });
     expect(types.drying_carry).toBeUndefined();
   });
 

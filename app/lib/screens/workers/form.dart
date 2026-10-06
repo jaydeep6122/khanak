@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:khanak/components/appTextField.dart';
 import 'package:khanak/components/formBits.dart';
-import 'package:khanak/components/rateDialog.dart';
 import 'package:khanak/components/groupedSection.dart';
 import 'package:khanak/components/saveBar.dart';
+import 'package:khanak/components/segmentedControl.dart';
 import 'package:khanak/components/tint.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/global/constants.dart';
@@ -15,13 +15,13 @@ import 'package:khanak/helpers/inputFormatters.dart';
 import 'package:khanak/helpers/json.dart';
 import 'package:khanak/helpers/toastNotifications.dart';
 import 'package:khanak/helpers/validators.dart';
-import 'package:khanak/types/work.dart';
 import 'package:khanak/types/worker.dart';
 
-/// A worker's details, kept short: the name, what they mainly do and what
-/// they are paid are required (a paatla's own rate per 1000 bricks, a
-/// driver's monthly salary, a group's rate the first time it is needed); a
-/// phone number and a note are optional. No photo.
+/// A worker's details, kept short: the name, what they mainly do and their
+/// own rate (per 1000 bricks or per day; a driver's monthly salary instead)
+/// are required; a phone number and a note are optional. No photo. All of
+/// the worker's pay is worked out from their own rate: in group work they
+/// get their share of the bricks at it.
 class WorkerFormScreen extends StatefulWidget {
   final Worker? worker;
 
@@ -47,30 +47,19 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
     text: widget.worker?.monthlySalary == null ? '' : Formatters.formatDouble(widget.worker!.monthlySalary!),
   );
   late MainWork? _mainWork = widget.worker?.mainWork ?? widget.initialMainWork;
+
+  /// Per 1000 bricks or per day. Follows the main work (per day for roj)
+  /// until picked by hand.
+  late PayUnit _rateUnit = widget.worker?.rateUnit ?? _defaultUnit(_mainWork);
+  late bool _rateUnitPicked = widget.worker?.rateUnit != null;
   late DateTime _salaryFrom = widget.worker?.salaryFrom ?? DateTime.now();
   bool _busy = false;
 
-  /// Rates typed here for group work not priced yet, by work type code.
-  final Map<String, TextEditingController> _groupRates = {};
-
-  TextEditingController _groupRate(String code) => _groupRates.putIfAbsent(code, TextEditingController.new);
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => context.read<Core>().factory.fetchWorkTypes());
-  }
+  static PayUnit _defaultUnit(MainWork? work) => work == MainWork.daily ? PayUnit.perDay : PayUnit.per1000;
 
   @override
   void dispose() {
-    for (final controller in [
-      _nameController,
-      _phoneController,
-      _noteController,
-      _rateController,
-      _salaryController,
-      ..._groupRates.values,
-    ]) {
+    for (final controller in [_nameController, _phoneController, _noteController, _rateController, _salaryController]) {
       controller.dispose();
     }
     super.dispose();
@@ -88,44 +77,29 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
     if (!valid) return;
 
     final work = _mainWork!;
-    final driver = work == MainWork.driver;
-    final core = context.read<Core>();
-    final module = core.worker;
-    // Group work not priced yet is priced together with the worker.
-    final unpriced = _unpriced(core, work);
+    final driver = work.hasSalary;
+    final module = context.read<Core>().worker;
     setState(() => _busy = true);
     final saved = await module.saveWorker({
       'name': _nameController.text.trim(),
       'main_work': work.value,
-      'rate': work.hasOwnRate ? apiAmount(_rateController.text) : null,
+      'rate': driver ? null : apiAmount(_rateController.text),
+      'rate_unit': driver ? null : _rateUnit.value,
       'phone': _text(_phoneController),
       'note': _text(_noteController),
       'monthly_salary': driver ? apiAmount(_salaryController.text) : null,
       'salary_from': driver ? apiDate(_salaryFrom) : null,
-      if (unpriced.isNotEmpty)
-        'group_rates': [
-          for (final type in unpriced) {'work_type_id': type.id, 'rate': apiAmount(_groupRate(type.code!).text)},
-        ],
     }, workerId: widget.worker?.id);
     if (!mounted) return;
     setState(() => _busy = false);
     if (saved == null) return showErrorToast(module.error ?? 'error_generic'.tr());
-    if (unpriced.isNotEmpty) await core.factory.fetchWorkTypes(refresh: true);
-    if (!mounted) return;
     showSuccessToast('saved'.tr());
     Navigator.of(context).pop(saved);
   }
 
-  /// The group work [work] is paid for that has no rate yet.
-  List<WorkType> _unpriced(Core core, MainWork work) => [
-    for (final code in work.groupWork)
-      if (core.factory.workType(code) case final type? when rateMissing(type)) type,
-  ];
-
   @override
   Widget build(BuildContext context) {
     final work = _mainWork;
-    final core = context.watch<Core>();
 
     return Scaffold(
       extendBody: true,
@@ -176,32 +150,41 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
                 MainWork.daily => Tint.money.color(context),
                 MainWork.other => Tint.work.color(context),
               },
-              onSelected: (w) => setState(() => _mainWork = w),
+              onSelected: (w) => setState(() {
+                _mainWork = w;
+                if (!_rateUnitPicked) _rateUnit = _defaultUnit(w);
+              }),
             ),
             if (work == null)
               Padding(
                 padding: const EdgeInsets.only(top: AppTheme.spaceXs, left: AppTheme.spaceXs),
                 child: Text('main_work_help'.tr(), style: context.text.bodySmall),
               ),
-            if (work != null && work.hasOwnRate) ...[
+            if (work != null && !work.hasSalary) ...[
               const SizedBox(height: AppTheme.spaceLg),
+              GroupCaption('own_rate'.tr()),
+              SegmentedControl<PayUnit>(
+                options: const [PayUnit.per1000, PayUnit.perDay],
+                selected: _rateUnit,
+                label: (unit) => 'own_rate_${unit.value}'.tr(),
+                onChanged: (unit) => setState(() {
+                  _rateUnit = unit;
+                  _rateUnitPicked = true;
+                }),
+              ),
+              const SizedBox(height: AppTheme.spaceSm),
               AppTextField(
                 controller: _rateController,
-                labelText: work == MainWork.molder ? 'own_rate_molder'.tr() : 'own_rate_daily'.tr(),
+                labelText: 'rate'.tr(),
+                helperText: _rateUnit == PayUnit.per1000 ? 'own_rate_per_1000_help'.tr() : 'own_rate_per_day_help'.tr(),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [DecimalInputFormatter(decimals: 2)],
                 prefixText: '₹ ',
+                suffixText: 'rate_unit_${_rateUnit.value}'.tr(),
                 validator: (v) => Validators.amount(v, fieldLabel: 'rate'.tr(), allowZero: false),
               ),
             ],
-            if (work != null && work.groupWork.isNotEmpty) ...[
-              const SizedBox(height: AppTheme.space2xl),
-              _GroupRates(
-                types: [for (final code in work.groupWork) ?core.factory.workType(code)],
-                controllerFor: _groupRate,
-              ),
-            ],
-            if (work == MainWork.driver) ...[
+            if (work != null && work.hasSalary) ...[
               const SizedBox(height: AppTheme.spaceLg),
               AppTextField(
                 controller: _salaryController,
@@ -234,60 +217,6 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-/// What the worker's group work pays. A rate set before shows as it is (the
-/// owner or munim taps it to change it); a missing one must be typed here,
-/// and is then used for every worker in that group.
-class _GroupRates extends StatelessWidget {
-  final List<WorkType> types;
-  final TextEditingController Function(String code) controllerFor;
-
-  const _GroupRates({required this.types, required this.controllerFor});
-
-  @override
-  Widget build(BuildContext context) {
-    final set = types.where((t) => !rateMissing(t)).toList();
-    final missing = types.where(rateMissing).toList();
-    final canSet = canSetRates(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        GroupCaption('group_rate_title'.tr()),
-        if (set.isNotEmpty)
-          GroupedSection(
-            dividerIndent: AppTheme.spaceLg,
-            children: [
-              for (final type in set)
-                GroupedRow(
-                  title: type.label,
-                  value: '${Formatters.formatCurrency(type.rate!)} / ${'rate_unit_${type.payUnit.value}'.tr()}',
-                  onTap: canSet ? () => askRate(context, type) : null,
-                ),
-            ],
-          ),
-        for (final type in missing) ...[
-          const SizedBox(height: AppTheme.spaceSm),
-          AppTextField(
-            controller: controllerFor(type.code!),
-            labelText: type.label,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [DecimalInputFormatter(decimals: 2)],
-            prefixText: '₹ ',
-            suffixText: 'rate_unit_${type.payUnit.value}'.tr(),
-            validator: (v) => Validators.amount(v, fieldLabel: type.label, allowZero: false),
-          ),
-        ],
-        Padding(
-          padding: const EdgeInsets.only(top: AppTheme.spaceSm, left: AppTheme.spaceXs),
-          child: Text(
-            missing.isEmpty ? 'group_rate_help'.tr() : 'group_rate_first_help'.tr(),
-            style: context.text.bodySmall,
-          ),
-        ),
-      ],
     );
   }
 }

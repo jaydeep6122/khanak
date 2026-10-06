@@ -8,14 +8,15 @@ import { accrueSalaries } from "../../services/salaries.js";
 import { newShareToken } from "../../services/tokens.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { dec, money } from "../../utils/money.js";
-import { hasRate, rateMissing } from "../../services/pay.js";
-import { GROUP_WORK, ownPayProblem, paidByDay } from "./workers.schemas.js";
+import { ownPayProblem } from "./workers.schemas.js";
 
-export const WORKER_COLUMNS = `id, name, nickname, village, phone, note, main_work, rate,
+export const WORKER_COLUMNS = `id, name, nickname, village, phone, note, main_work, rate, rate_unit,
   monthly_salary, salary_from, is_active, left_on, share_enabled, created_at, updated_at`;
 
-// What a supervisor may see of other workers: enough to pick the right one.
-const SUPERVISOR_COLUMNS = "id, name, nickname, village, main_work, is_active";
+// What a supervisor may see of other workers: enough to pick the right one
+// (rate_unit, so a worker paid by the day is not picked for group work), but
+// never their rate.
+const SUPERVISOR_COLUMNS = "id, name, nickname, village, main_work, rate_unit, is_active";
 
 const TXN_COLUMNS = `id, worker_id, period_id, kind, txn_date, amount, cash_holder_id, note,
   created_by, cancelled_at, cancel_reason, created_at, updated_at`;
@@ -79,52 +80,21 @@ export async function getBalance(ctx, workerId) {
   };
 }
 
-/**
- * Sets the group rates sent with a worker, then makes sure the group work
- * this worker does is priced: no one is added to work that pays nothing.
- */
-async function priceGroupWork(client, ctx, worker, groupRates = []) {
-  for (const { work_type_id, rate } of groupRates) {
-    const {
-      rows: [before],
-    } = await client.query("SELECT * FROM work_types WHERE factory_id = $1 AND id = $2 FOR UPDATE", [
-      ctx.factory.id,
-      work_type_id,
-    ]);
-    if (!before) throw new ApiError(400, "Unknown work_type_id in group_rates");
-    if (!before.is_group) throw new ApiError(400, `"${before.name}" is not group work`);
-    const {
-      rows: [after],
-    } = await client.query("UPDATE work_types SET rate = $1 WHERE id = $2 RETURNING *", [rate, before.id]);
-    await audit(client, { factoryId: ctx.factory.id, userId: ctx.user.id, action: "update", entityType: "work_type", entityId: before.id, before, after });
-  }
-
-  // Paid by the day: no group rate is needed.
-  const codes = paidByDay(worker) ? [] : (GROUP_WORK[worker.main_work] ?? []);
-  if (codes.length === 0) return;
-  const { rows } = await client.query(
-    "SELECT code, name, rate FROM work_types WHERE factory_id = $1 AND code = ANY($2::text[])",
-    [ctx.factory.id, codes],
-  );
-  const missing = rows.find((type) => !hasRate(type.rate));
-  if (missing) throw rateMissing(missing);
-}
-
 export async function createWorker(ctx, data) {
   return withTransaction(async (client) => {
-    await priceGroupWork(client, ctx, data, data.group_rates);
     const {
       rows: [worker],
     } = await client.query(
-      `INSERT INTO workers (factory_id, name, main_work, rate, nickname, village, phone, note,
+      `INSERT INTO workers (factory_id, name, main_work, rate, rate_unit, nickname, village, phone, note,
                             monthly_salary, salary_from, share_token, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING ${WORKER_COLUMNS}`,
       [
         ctx.factory.id,
         data.name,
         data.main_work,
         data.rate ?? null,
+        data.rate == null ? null : data.rate_unit,
         data.nickname ?? null,
         data.village ?? null,
         data.phone ?? null,
@@ -143,17 +113,10 @@ export async function createWorker(ctx, data) {
 export async function updateWorker(ctx, workerId, data) {
   const updated = await withTransaction(async (client) => {
     const before = withoutToken(await loadWorker(client, ctx.factory.id, workerId, { lock: true }));
-    const { group_rates: groupRates, ...fields } = data;
-    data = fields;
-    const workChanged = data.main_work !== undefined && data.main_work !== before.main_work;
-    // A rate means something else in other work (per 1000 for a paatla, per
-    // day for others): moved without a new one, the old rate is dropped.
-    if (workChanged && data.rate === undefined && before.rate != null) data = { ...data, rate: null };
+    // A driver has no rate of their own.
+    if (data.main_work === "driver" && data.rate === undefined) data = { ...data, rate: null };
+    if (data.rate === null) data = { ...data, rate_unit: null };
     const merged = { ...before, ...data };
-    // Moved to other group work, or from day pay to the group's: that work
-    // must be priced too.
-    const payChanged = workChanged || (data.rate !== undefined && paidByDay(before) !== paidByDay(merged));
-    if (groupRates || payChanged) await priceGroupWork(client, ctx, merged, groupRates);
     if ((merged.monthly_salary == null) !== (merged.salary_from == null)) {
       throw new ApiError(400, "Give both monthly_salary and salary_from, or neither");
     }
@@ -164,6 +127,7 @@ export async function updateWorker(ctx, workerId, data) {
       "name",
       "main_work",
       "rate",
+      "rate_unit",
       "nickname",
       "village",
       "phone",

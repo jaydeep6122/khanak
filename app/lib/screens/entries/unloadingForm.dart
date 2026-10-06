@@ -92,13 +92,15 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
             for (final share in group.workers)
               core.worker.byId(share.workerId) ?? Worker(id: share.workerId, name: share.name, isActive: true),
           ];
-          _group = GroupDraft(type: type, workers: workers);
-          final equal = splitEqually(group.total, workers.length);
-          for (var i = 0; i < workers.length; i++) {
-            if ((group.workers[i].amount - equal[i]).abs() > 0.001) {
-              _group!.amounts[workers[i].id] = group.workers[i].amount;
-            }
-          }
+          _group = GroupDraft(
+            type: type,
+            workers: workers,
+            savedRates: {
+              for (final share in group.workers)
+                if (share.rate != null) share.workerId: share.rate!,
+            },
+          );
+          markHandSetShares(_group!, group, bricks: unloading.quantity);
         }
       }
     }
@@ -127,7 +129,9 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
       'unloaded_on': apiDate(_date),
       'kiln_id': _kiln!.id,
       'quantity': _bricks,
-      'groups': [if (group.workers.isNotEmpty) group.toJson(total)],
+      'groups': [
+        if (group.workers.isNotEmpty) group.toJson(bricks: _bricks, rate: keptOrCurrentRate(_savedRate, group.type)),
+      ],
       'note': _noteController.text.trim(),
     }, unloadingId: widget.unloadingId);
     if (!mounted) return;
