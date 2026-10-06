@@ -18,6 +18,7 @@ import {
   workerRateLookup,
 } from "../../services/work-groups.js";
 import { ApiError } from "../../utils/ApiError.js";
+import { paidOnlyByDay } from "../workers/workers.schemas.js";
 import { money } from "../../utils/money.js";
 
 const COUNT_COLUMNS = `c.id, c.period_id, c.counted_on, c.reason, c.quantity, c.molder_id,
@@ -127,10 +128,10 @@ async function workRowsFor(client, ctx, data, saved) {
   const rows = [];
   // Each molder is paid at their own rate per 1000 bricks; an edited count
   // keeps the rate it was made with while the molder stays the same. A
-  // molder paid by the day earns nothing from counts: their days are typed
-  // in as day work.
+  // molder paid only by the day earns nothing from counts: their days are
+  // typed in as day work.
   const molder = workers.get(data.molder_id);
-  if (!data.already_counted && (molder?.rate_unit !== "per_day" || data.molder_amount !== undefined)) {
+  if (!data.already_counted && (!paidOnlyByDay(molder) || data.molder_amount !== undefined)) {
     const molding = types.byCode.get("molding");
     const { rate } = workerRateLookup(saved, workers)(molding, data.molder_id);
     if (data.molder_amount === undefined && !hasRate(rate)) throw workerRateMissing(molder);

@@ -218,8 +218,10 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
                             [
                               worker.mainWork.displayName,
                               ?worker.village,
-                              if (worker.rate != null && worker.rateUnit != null)
-                                '${Formatters.formatCurrency(worker.rate!)} ${'rate_unit_${worker.rateUnit!.value}'.tr()}',
+                              if (worker.brickRate != null)
+                                '${Formatters.formatCurrency(worker.brickRate!)} ${'rate_unit_per_1000'.tr()}',
+                              if (worker.dayRate != null)
+                                '${Formatters.formatCurrency(worker.dayRate!)} ${'rate_unit_per_day'.tr()}',
                               if (worker.isSalaried)
                                 'salary_line'.tr(
                                   namedArgs: {'amount': Formatters.formatCurrency(worker.monthlySalary!)},

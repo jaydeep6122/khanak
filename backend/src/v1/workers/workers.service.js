@@ -10,13 +10,14 @@ import { ApiError } from "../../utils/ApiError.js";
 import { dec, money } from "../../utils/money.js";
 import { ownPayProblem } from "./workers.schemas.js";
 
-export const WORKER_COLUMNS = `id, name, nickname, village, phone, note, main_work, rate, rate_unit,
+export const WORKER_COLUMNS = `id, name, nickname, village, phone, note, main_work, brick_rate, day_rate,
   monthly_salary, salary_from, is_active, left_on, share_enabled, created_at, updated_at`;
 
 // What a supervisor may see of other workers: enough to pick the right one
-// (rate_unit, so a worker paid by the day is not picked for group work), but
-// never their rate.
-const SUPERVISOR_COLUMNS = "id, name, nickname, village, main_work, rate_unit, is_active";
+// (paid_by_day, so a worker paid only by the day is not picked for group
+// work), but never their rates.
+const SUPERVISOR_COLUMNS = `id, name, nickname, village, main_work,
+  (brick_rate IS NULL AND day_rate IS NOT NULL) AS paid_by_day, is_active`;
 
 const TXN_COLUMNS = `id, worker_id, period_id, kind, txn_date, amount, cash_holder_id, note,
   created_by, cancelled_at, cancel_reason, created_at, updated_at`;
@@ -85,7 +86,7 @@ export async function createWorker(ctx, data) {
     const {
       rows: [worker],
     } = await client.query(
-      `INSERT INTO workers (factory_id, name, main_work, rate, rate_unit, nickname, village, phone, note,
+      `INSERT INTO workers (factory_id, name, main_work, brick_rate, day_rate, nickname, village, phone, note,
                             monthly_salary, salary_from, share_token, created_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
        RETURNING ${WORKER_COLUMNS}`,
@@ -93,8 +94,8 @@ export async function createWorker(ctx, data) {
         ctx.factory.id,
         data.name,
         data.main_work,
-        data.rate ?? null,
-        data.rate == null ? null : data.rate_unit,
+        data.brick_rate ?? null,
+        data.day_rate ?? null,
         data.nickname ?? null,
         data.village ?? null,
         data.phone ?? null,
@@ -114,8 +115,7 @@ export async function updateWorker(ctx, workerId, data) {
   const updated = await withTransaction(async (client) => {
     const before = withoutToken(await loadWorker(client, ctx.factory.id, workerId, { lock: true }));
     // A driver has no rate of their own.
-    if (data.main_work === "driver" && data.rate === undefined) data = { ...data, rate: null };
-    if (data.rate === null) data = { ...data, rate_unit: null };
+    if (data.main_work === "driver") data = { brick_rate: null, day_rate: null, ...data };
     const merged = { ...before, ...data };
     if ((merged.monthly_salary == null) !== (merged.salary_from == null)) {
       throw new ApiError(400, "Give both monthly_salary and salary_from, or neither");
@@ -126,8 +126,8 @@ export async function updateWorker(ctx, workerId, data) {
     const set = setClause(data, [
       "name",
       "main_work",
-      "rate",
-      "rate_unit",
+      "brick_rate",
+      "day_rate",
       "nickname",
       "village",
       "phone",

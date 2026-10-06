@@ -77,7 +77,7 @@ async function priced(db, factoryId, data, keptRate) {
 
   const {
     rows: [worker],
-  } = await db.query("SELECT rate, rate_unit FROM workers WHERE factory_id = $1 AND id = $2", [
+  } = await db.query("SELECT brick_rate, day_rate FROM workers WHERE factory_id = $1 AND id = $2", [
     factoryId,
     data.worker_id,
   ]);
@@ -91,10 +91,7 @@ async function priced(db, factoryId, data, keptRate) {
   // The worker's own rate: their rate per day for day work, their rate per
   // 1000 bricks for brick work paid at each worker's own rate.
   const atOwnRate = paidAtOwnRate(type);
-  const ownRate =
-    (type.pay_unit === "per_day" && worker.rate_unit === "per_day") || (atOwnRate && worker.rate_unit === "per_1000")
-      ? worker.rate
-      : null;
+  const ownRate = type.pay_unit === "per_day" ? worker.day_rate : atOwnRate ? worker.brick_rate : null;
   const rate = [keptRate, ownRate, type.rate].find(hasRate) ?? null;
   if (data.amount === undefined && !hasRate(rate)) {
     throw atOwnRate ? new ApiError(400, "No rate per 1000 bricks is set for this worker yet") : rateMissing(type);

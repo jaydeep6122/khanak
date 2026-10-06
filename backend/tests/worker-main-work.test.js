@@ -1,6 +1,6 @@
 import { addWorker, balanceOf, closeDb, createFactory, data, factoryClient, molder, per1000, perDay, setRates, signup, today, carried } from "./helpers.js";
 
-// Every worker has a main kind of work and a rate of their own, per 1000
+// Every worker has a main kind of work and rates of their own, per 1000
 // bricks or per day. A driver has a monthly salary instead.
 describe("main work and each worker's own rate", () => {
   let f, types;
@@ -17,10 +17,10 @@ describe("main work and each worker's own rate", () => {
   test("a worker cannot be added without what they are paid", async () => {
     await f.post("/workers", { name: "No kind", ...per1000(100) }, 400);
     const noRate = await f.post("/workers", { name: "Ramesh", main_work: "molder" }, 400);
-    expect(noRate.body.message).toMatch(/rate per 1000 bricks or per day/);
+    expect(noRate.body.message).toMatch(/rate per 1000 bricks, per day, or both/);
     await f.post("/workers", { name: "Dinesh", main_work: "stacker" }, 400);
-    await f.post("/workers", { name: "Kishan", main_work: "loader", rate: 400 }, 400);
-    await f.post("/workers", { name: "Kishan", main_work: "loader", rate_unit: "per_week", rate: 400 }, 400);
+    await f.post("/workers", { name: "Kishan", main_work: "loader", brick_rate: 0 }, 400);
+    await f.post("/workers", { name: "Kishan", main_work: "loader", day_rate: -400 }, 400);
     await f.post("/workers", { name: "Suresh", main_work: "driver" }, 400);
     await f.post(
       "/workers",
@@ -30,13 +30,39 @@ describe("main work and each worker's own rate", () => {
     const driver = data(
       await f.post("/workers", { name: "Suresh", main_work: "driver", monthly_salary: 15000, salary_from: today() }, 201),
     );
-    expect(driver).toMatchObject({ rate: null, rate_unit: null });
+    expect(driver).toMatchObject({ brick_rate: null, day_rate: null });
+  });
+
+  test("a worker may have both rates, and they need not match", async () => {
+    const both = await addWorker(f, "Bhikha", { main_work: "loader", brick_rate: 250, day_rate: 300 });
+    expect(both).toMatchObject({ brick_rate: "250.00", day_rate: "300.00" });
+    const paatla = await addWorker(f, "Paatla 2", molder(550));
+    const count = data(
+      await f.post(
+        "/brick-counts",
+        {
+          counted_on: today(),
+          reason: "drying_by_workers",
+          quantity: 10000,
+          molder_id: paatla.id,
+          groups: [{ work_type_id: types.kiln_loading.id, workers: [{ worker_id: both.id }] }],
+        },
+        201,
+      ),
+    );
+    // Brick work at ₹250 per 1000, a day's work at ₹300.
+    expect(count.groups[0].workers[0]).toMatchObject({ rate: "250.00", amount: "2500.00" });
+    const day = data(
+      await f.post("/work-entries", { worker_id: both.id, work_type_id: types.daily.id, entry_date: today(), quantity: 1 }, 201),
+    );
+    expect(day).toMatchObject({ rate: "300.00", amount: "300.00" });
+    expect(await balanceOf(f, both.id)).toBe("2800.00");
   });
 
   test("two molders are paid at their own rates", async () => {
     const ramesh = await addWorker(f, "Ramesh", molder(550));
     const mukesh = await addWorker(f, "Mukesh", molder(600));
-    expect(ramesh).toMatchObject({ main_work: "molder", rate: "550.00", rate_unit: "per_1000" });
+    expect(ramesh).toMatchObject({ main_work: "molder", brick_rate: "550.00", day_rate: null });
 
     const groups = await carried(f);
     const count = (molderId) =>
@@ -80,7 +106,7 @@ describe("main work and each worker's own rate", () => {
     expect(await balanceOf(f, jagdish.id)).toBe("600.00");
 
     // A raise applies to new counts; the old count keeps its rates.
-    await f.patch(`/workers/${dinesh.id}`, { rate: 200 }, 200);
+    await f.patch(`/workers/${dinesh.id}`, { brick_rate: 200 }, 200);
     const again = data(
       await f.put(
         `/brick-counts/${count.id}`,
@@ -123,12 +149,12 @@ describe("main work and each worker's own rate", () => {
   test("a worker keeps their rate when their main work changes; a driver has none", async () => {
     const worker = await addWorker(f, "Jagdish", molder(500));
     const moved = data(await f.patch(`/workers/${worker.id}`, { main_work: "loader" }, 200));
-    expect(moved).toMatchObject({ main_work: "loader", rate: "500.00", rate_unit: "per_1000" });
+    expect(moved).toMatchObject({ main_work: "loader", brick_rate: "500.00" });
     await f.patch(`/workers/${worker.id}`, { main_work: "driver" }, 400);
     const driver = data(
       await f.patch(`/workers/${worker.id}`, { main_work: "driver", monthly_salary: 12000, salary_from: today() }, 200),
     );
-    expect(driver).toMatchObject({ rate: null, rate_unit: null });
+    expect(driver).toMatchObject({ brick_rate: null, day_rate: null });
     await f.patch(`/workers/${worker.id}`, { main_work: "loader" }, 400);
   });
 

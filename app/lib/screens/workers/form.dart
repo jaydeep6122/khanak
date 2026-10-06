@@ -6,7 +6,6 @@ import 'package:khanak/components/formBits.dart';
 import 'package:khanak/components/groupedSection.dart';
 import 'package:khanak/components/optionSheet.dart';
 import 'package:khanak/components/saveBar.dart';
-import 'package:khanak/components/segmentedControl.dart';
 import 'package:khanak/components/tint.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/global/constants.dart';
@@ -41,29 +40,42 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
   late final _nameController = TextEditingController(text: widget.worker?.name ?? widget.initialName);
   late final _phoneController = TextEditingController(text: widget.worker?.phone);
   late final _noteController = TextEditingController(text: widget.worker?.note);
-  late final _rateController = TextEditingController(
-    text: widget.worker?.rate == null ? '' : Formatters.formatDouble(widget.worker!.rate!),
+  late final _brickRateController = TextEditingController(
+    text: widget.worker?.brickRate == null ? '' : Formatters.formatDouble(widget.worker!.brickRate!),
+  );
+  late final _dayRateController = TextEditingController(
+    text: widget.worker?.dayRate == null ? '' : Formatters.formatDouble(widget.worker!.dayRate!),
   );
   late final _salaryController = TextEditingController(
     text: widget.worker?.monthlySalary == null ? '' : Formatters.formatDouble(widget.worker!.monthlySalary!),
   );
   late MainWork? _mainWork = widget.worker?.mainWork ?? widget.initialMainWork;
 
-  /// Per 1000 bricks or per day. Follows the main work (per day for roj)
-  /// until picked by hand.
-  late PayUnit _rateUnit = widget.worker?.rateUnit ?? _defaultUnit(_mainWork);
-  late bool _rateUnitPicked = widget.worker?.rateUnit != null;
   late DateTime _salaryFrom = widget.worker?.salaryFrom ?? DateTime.now();
   bool _busy = false;
 
   /// Set once save was tapped, so a missing main work shows in red.
   bool _tried = false;
 
-  static PayUnit _defaultUnit(MainWork? work) => work == MainWork.daily ? PayUnit.perDay : PayUnit.per1000;
+  /// Either rate may be left empty, but not both. [checkBoth] puts the
+  /// "give at least one" message on one field only.
+  String? _rateProblem(String? value, String label, {bool checkBoth = true}) {
+    if (checkBoth && _text(_brickRateController) == null && _text(_dayRateController) == null) {
+      return 'own_rate_one_needed'.tr();
+    }
+    return Validators.amount(value, fieldLabel: label, isRequired: false, allowZero: false);
+  }
 
   @override
   void dispose() {
-    for (final controller in [_nameController, _phoneController, _noteController, _rateController, _salaryController]) {
+    for (final controller in [
+      _nameController,
+      _phoneController,
+      _noteController,
+      _brickRateController,
+      _dayRateController,
+      _salaryController,
+    ]) {
       controller.dispose();
     }
     super.dispose();
@@ -88,8 +100,8 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
     final saved = await module.saveWorker({
       'name': _nameController.text.trim(),
       'main_work': work.value,
-      'rate': driver ? null : apiAmount(_rateController.text),
-      'rate_unit': driver ? null : _rateUnit.value,
+      'brick_rate': driver ? null : apiAmount(_brickRateController.text),
+      'day_rate': driver ? null : apiAmount(_dayRateController.text),
       'phone': _text(_phoneController),
       'note': _text(_noteController),
       'monthly_salary': driver ? apiAmount(_salaryController.text) : null,
@@ -136,10 +148,7 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
       leading: (w) => TintIcon(tint: _tint(w), icon: _icon(w)),
     );
     if (work == null || !mounted) return;
-    setState(() {
-      _mainWork = work;
-      if (!_rateUnitPicked) _rateUnit = _defaultUnit(work);
-    });
+    setState(() => _mainWork = work);
   }
 
   @override
@@ -186,25 +195,26 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
             if (work != null && !work.hasSalary) ...[
               const SizedBox(height: AppTheme.spaceLg),
               GroupCaption('own_rate'.tr()),
-              SegmentedControl<PayUnit>(
-                options: const [PayUnit.per1000, PayUnit.perDay],
-                selected: _rateUnit,
-                label: (unit) => 'own_rate_${unit.value}'.tr(),
-                onChanged: (unit) => setState(() {
-                  _rateUnit = unit;
-                  _rateUnitPicked = true;
-                }),
-              ),
-              const SizedBox(height: AppTheme.spaceSm),
               AppTextField(
-                controller: _rateController,
-                labelText: 'rate'.tr(),
-                helperText: _rateUnit == PayUnit.per1000 ? 'own_rate_per_1000_help'.tr() : 'own_rate_per_day_help'.tr(),
+                controller: _brickRateController,
+                labelText: 'own_rate_per_1000'.tr(),
+                helperText: 'own_rate_per_1000_help'.tr(),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [DecimalInputFormatter(decimals: 2)],
                 prefixText: '₹ ',
-                suffixText: 'rate_unit_${_rateUnit.value}'.tr(),
-                validator: (v) => Validators.amount(v, fieldLabel: 'rate'.tr(), allowZero: false),
+                suffixText: 'rate_unit_per_1000'.tr(),
+                validator: (v) => _rateProblem(v, 'own_rate_per_1000'.tr()),
+              ),
+              const SizedBox(height: AppTheme.spaceLg),
+              AppTextField(
+                controller: _dayRateController,
+                labelText: 'own_rate_per_day'.tr(),
+                helperText: 'own_rate_per_day_help'.tr(),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [DecimalInputFormatter(decimals: 2)],
+                prefixText: '₹ ',
+                suffixText: 'rate_unit_per_day'.tr(),
+                validator: (v) => _rateProblem(v, 'own_rate_per_day'.tr(), checkBoth: false),
               ),
             ],
             if (work != null && work.hasSalary) ...[

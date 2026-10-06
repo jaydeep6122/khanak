@@ -1,4 +1,5 @@
 import { ApiError } from "../utils/ApiError.js";
+import { paidOnlyByDay } from "../v1/workers/workers.schemas.js";
 import { hasRate, resolveGroup } from "./pay.js";
 
 /**
@@ -19,13 +20,14 @@ export async function loadWorkTypes(db, factoryId) {
 
 /**
  * The workers named in a document, by id, with what they are paid: their
- * name, rate and rate_unit. Every id must be one of this factory's workers.
+ * name, brick_rate and day_rate. Every id must be one of this factory's
+ * workers.
  */
 export async function loadWorkers(db, factoryId, workerIds) {
   const unique = [...new Set(workerIds.filter(Boolean))];
   if (unique.length === 0) return new Map();
   const { rows } = await db.query(
-    "SELECT id, name, rate, rate_unit FROM workers WHERE factory_id = $1 AND id = ANY($2::uuid[])",
+    "SELECT id, name, brick_rate, day_rate FROM workers WHERE factory_id = $1 AND id = ANY($2::uuid[])",
     [factoryId, unique],
   );
   if (rows.length !== unique.length) throw new ApiError(400, "Unknown worker_id");
@@ -35,13 +37,13 @@ export async function loadWorkers(db, factoryId, workerIds) {
 export const groupWorkerIds = (groups = []) => groups.flatMap((group) => group.workers.map((worker) => worker.worker_id));
 
 /**
- * A worker paid by the day is never paid a group's share: their days are
- * typed in as day work instead.
+ * A worker paid only by the day is never paid a group's share: their days
+ * are typed in as day work instead.
  */
 export function assertNotPaidByDay(groups = [], workers) {
   for (const workerId of groupWorkerIds(groups)) {
     const worker = workers.get(workerId);
-    if (worker?.rate_unit === "per_day") {
+    if (paidOnlyByDay(worker)) {
       throw new ApiError(400, `"${worker.name}" is paid by the day: type their days in as day work`);
     }
   }
@@ -84,7 +86,7 @@ export const workerRateLookup = (saved, workers) => (workType, workerId) => {
   const worker = workers.get(workerId);
   const kept = saved.byWorker.get(`${workType.id}:${workerId}`);
   if (hasRate(kept)) return { name: worker?.name, rate: kept };
-  return { name: worker?.name, rate: worker?.rate_unit === "per_1000" ? worker.rate : null };
+  return { name: worker?.name, rate: worker?.brick_rate ?? null };
 };
 
 /**

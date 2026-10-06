@@ -168,7 +168,7 @@ describe("an ordinary season", () => {
   });
 
   test("a molder's new rate applies to new counts only, even when an old count is edited", async () => {
-    await f.patch(`/workers/${ramesh.id}`, { rate: 600 }, 200);
+    await f.patch(`/workers/${ramesh.id}`, { brick_rate: 600 }, 200);
 
     const counts = data(await f.get("/brick-counts", { reason: "drying_by_workers" }, 200));
     const drying = counts[0];

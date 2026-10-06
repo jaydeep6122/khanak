@@ -99,8 +99,9 @@ describe("a supervisor running the kiln", () => {
     const list = data(await s.get("/workers", undefined, 200));
     expect(list[0]).not.toHaveProperty("balance");
     expect(list[0]).not.toHaveProperty("phone");
-    expect(list[0]).not.toHaveProperty("rate");
-    expect(list[0]).toHaveProperty("rate_unit");
+    expect(list[0]).not.toHaveProperty("brick_rate");
+    expect(list[0]).not.toHaveProperty("day_rate");
+    expect(list[0]).toHaveProperty("paid_by_day");
 
     // Before an advance: the balance number only.
     expect(data(await s.get(`/workers/${ramesh.id}/balance`, undefined, 200)).balance).toBe("-3750.00");
