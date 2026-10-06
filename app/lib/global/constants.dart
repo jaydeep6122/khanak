@@ -183,17 +183,7 @@ enum MainWork {
 
   String get displayName => 'main_work_$value'.tr();
 
-  /// A molder (per 1000 bricks) and a day worker (per day) each have their
-  /// own rate, and must have one.
-  bool get hasOwnRate => this == molder || this == daily;
-
-  /// Group work this worker is paid for at the group's rate. Its rate is
-  /// asked when such a worker is added, the first time (as on the server).
-  /// Loading a vehicle is asked at the first sale instead.
-  List<String> get groupWork => switch (this) {
-    loader => const ['drying_carry', 'kiln_loading'],
-    stacker => const ['stacking'],
-    unloader => const ['unloading'],
-    _ => const [],
-  };
+  /// A driver is paid a monthly salary; everyone else at a rate of their
+  /// own, per 1000 bricks or per day.
+  bool get hasSalary => this == driver;
 }

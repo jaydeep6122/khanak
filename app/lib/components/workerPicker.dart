@@ -24,13 +24,15 @@ Future<Worker?> pickWorker(
 }
 
 /// Picks any number of workers (a loading group, a nikasi group). Null when
-/// dismissed; [initial] starts ticked.
+/// dismissed; [initial] starts ticked. With [paidByDay] false, workers paid
+/// by the day are not listed.
 Future<List<Worker>?> pickWorkers(
   BuildContext context, {
   required String title,
   MainWork? role,
   List<Worker> initial = const [],
-}) => _showPicker(context, title: title, multi: true, role: role, initial: initial);
+  bool paidByDay = true,
+}) => _showPicker(context, title: title, multi: true, role: role, initial: initial, paidByDay: paidByDay);
 
 Future<List<Worker>?> _showPicker(
   BuildContext context, {
@@ -39,6 +41,7 @@ Future<List<Worker>?> _showPicker(
   MainWork? role,
   List<Worker> initial = const [],
   Set<String> exclude = const {},
+  bool paidByDay = true,
 }) {
   context.read<Core>().worker.fetchWorkers();
   return showModalBottomSheet<List<Worker>>(
@@ -47,7 +50,14 @@ Future<List<Worker>?> _showPicker(
     useSafeArea: true,
     builder: (_) => FractionallySizedBox(
       heightFactor: 0.9,
-      child: _WorkerPicker(title: title, multi: multi, role: role, initial: initial, exclude: exclude),
+      child: _WorkerPicker(
+        title: title,
+        multi: multi,
+        role: role,
+        initial: initial,
+        exclude: exclude,
+        paidByDay: paidByDay,
+      ),
     ),
   );
 }
@@ -58,6 +68,7 @@ class _WorkerPicker extends StatefulWidget {
   final MainWork? role;
   final List<Worker> initial;
   final Set<String> exclude;
+  final bool paidByDay;
 
   const _WorkerPicker({
     required this.title,
@@ -65,6 +76,7 @@ class _WorkerPicker extends StatefulWidget {
     required this.role,
     required this.initial,
     required this.exclude,
+    required this.paidByDay,
   });
 
   @override
@@ -91,9 +103,7 @@ class _WorkerPickerState extends State<_WorkerPicker> {
   /// picked for, and their rate is asked like anywhere else.
   Future<void> _quickAdd() async {
     final worker = await Navigator.of(context).push<Worker>(
-      getPageRoute(
-        WorkerFormScreen(initialMainWork: widget.role, initialName: _search.isEmpty ? null : _search),
-      ),
+      getPageRoute(WorkerFormScreen(initialMainWork: widget.role, initialName: _search.isEmpty ? null : _search)),
     );
     if (worker == null || !mounted) return;
     await context.read<Core>().worker.fetchWorkers(refresh: true);
@@ -109,6 +119,7 @@ class _WorkerPickerState extends State<_WorkerPicker> {
     final ofRole = role == null || _showAll;
     final workers = core.worker.activeWorkers
         .where((w) => !widget.exclude.contains(w.id))
+        .where((w) => widget.paidByDay || !w.paidByDay)
         .where((w) => ofRole || w.mainWork == role || _isPicked(w))
         .where((w) => query.isEmpty || w.displayName.toLowerCase().contains(query))
         .toList();

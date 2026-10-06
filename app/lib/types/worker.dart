@@ -14,9 +14,12 @@ class Worker {
   final String? note;
   final MainWork mainWork;
 
-  /// A molder's rate per 1000 bricks, or a day worker's rate per day. Not
-  /// sent to a supervisor.
+  /// The worker's own rate, per 1000 bricks or per day ([rateUnit]). Not
+  /// sent to a supervisor. A driver has a monthly salary instead.
   final double? rate;
+
+  /// [PayUnit.per1000] or [PayUnit.perDay]; null for a driver.
+  final PayUnit? rateUnit;
   final double? monthlySalary;
   final DateTime? salaryFrom;
   final bool isActive;
@@ -36,6 +39,7 @@ class Worker {
     this.note,
     this.mainWork = MainWork.other,
     this.rate,
+    this.rateUnit,
     this.monthlySalary,
     this.salaryFrom,
     required this.isActive,
@@ -53,6 +57,7 @@ class Worker {
     note: json['note'] as String?,
     mainWork: MainWork.fromString(json['main_work'] as String?),
     rate: asDoubleOrNull(json['rate']),
+    rateUnit: json['rate_unit'] == null ? null : PayUnit.fromString(json['rate_unit'] as String?),
     monthlySalary: asDoubleOrNull(json['monthly_salary']),
     salaryFrom: asDate(json['salary_from']),
     isActive: asBool(json['is_active'], true),
@@ -77,6 +82,13 @@ class Worker {
   }
 
   bool get isSalaried => monthlySalary != null;
+
+  /// Paid by the day: never in a group's pay; their days are typed in.
+  bool get paidByDay => rateUnit == PayUnit.perDay;
+
+  /// Their rate per 1000 bricks, for brick work; null when they have none
+  /// (or it is not known, as for a supervisor).
+  double? get brickRate => rateUnit == PayUnit.per1000 ? rate : null;
 }
 
 /// A worker's own link (no login), sent on WhatsApp.

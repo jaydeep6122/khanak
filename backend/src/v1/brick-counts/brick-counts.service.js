@@ -3,17 +3,19 @@ import { Filters, pageResult } from "../../db/sql.js";
 import { withTransaction } from "../../db/transaction.js";
 import { audit } from "../../services/audit.js";
 import { assertCanChange, stockWarnings } from "../../services/ledger.js";
-import { hasRate, payFor, rateMissing } from "../../services/pay.js";
+import { hasRate, payFor, workerRateMissing } from "../../services/pay.js";
 import { periodFor } from "../../services/periods.js";
 import { postBrickCount } from "../../services/posting.js";
 import {
   assertNotPaidByDay,
-  assertWorkersExist,
   groupRows,
+  groupWorkerIds,
+  loadWorkers,
   loadWorkTypes,
-  rateLookup,
+  noSavedRates,
   readWork,
   savedRates,
+  workerRateLookup,
 } from "../../services/work-groups.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { money } from "../../utils/money.js";
@@ -78,19 +80,15 @@ export async function listBrickCounts(ctx, query) {
 
 /**
  * The molder's pay and every group's shares for one count. `saved` holds the
- * rates the count was first made with, and `previous` the count as it was
- * (both empty for a new count).
+ * rates the count was first made with (none for a new count).
  */
-async function workRowsFor(client, ctx, data, saved, previous = null) {
+async function workRowsFor(client, ctx, data, saved) {
   if (data.molder_amount !== undefined && !mayChangePay(ctx)) {
     throw new ApiError(403, "Only the owner or munim can change how much is paid");
   }
   const types = await loadWorkTypes(client, ctx.factory.id);
-  await assertWorkersExist(client, ctx.factory.id, [
-    data.molder_id,
-    ...(data.groups ?? []).flatMap((group) => group.workers.map((worker) => worker.worker_id)),
-  ]);
-  await assertNotPaidByDay(client, ctx.factory.id, data.groups);
+  const workers = await loadWorkers(client, ctx.factory.id, [data.molder_id, ...groupWorkerIds(data.groups)]);
+  assertNotPaidByDay(data.groups, workers);
   if (data.truck_id) {
     const { rowCount } = await client.query("SELECT 1 FROM trucks WHERE factory_id = $1 AND id = $2", [
       ctx.factory.id,
@@ -126,17 +124,21 @@ async function workRowsFor(client, ctx, data, saved, previous = null) {
   }
   if (intoKiln && !stackers) throw new ApiError(400, "Who stacked the bricks in the kiln (khadkaniya)?");
 
-  const rateFor = rateLookup(saved);
   const rows = [];
-  if (!data.already_counted) {
+  // Each molder is paid at their own rate per 1000 bricks; an edited count
+  // keeps the rate it was made with while the molder stays the same. A
+  // molder paid by the day earns nothing from counts: their days are typed
+  // in as day work.
+  const molder = workers.get(data.molder_id);
+  if (!data.already_counted && (molder?.rate_unit !== "per_day" || data.molder_amount !== undefined)) {
     const molding = types.byCode.get("molding");
-    const rate = await molderRate(client, ctx, data.molder_id, molding, saved, previous);
-    if (data.molder_amount === undefined && !hasRate(rate)) throw rateMissing(molding);
+    const { rate } = workerRateLookup(saved, workers)(molding, data.molder_id);
+    if (data.molder_amount === undefined && !hasRate(rate)) throw workerRateMissing(molder);
     rows.push({
       worker_id: data.molder_id,
       work_type_id: molding.id,
       quantity: data.quantity,
-      rate,
+      rate: hasRate(rate) ? rate : null,
       amount: data.molder_amount !== undefined ? money(data.molder_amount) : payFor(molding.pay_unit, rate, data.quantity),
     });
   }
@@ -144,23 +146,12 @@ async function workRowsFor(client, ctx, data, saved, previous = null) {
     ...groupRows(data.groups, types, {
       bricks: data.quantity,
       trips: data.trips,
-      rateFor,
+      saved,
+      workers,
       allowAmounts: mayChangePay(ctx),
     }),
   );
   return rows;
-}
-
-/**
- * Each molder has their own rate. An edited count keeps the rate it was made
- * with, unless the bricks are now someone else's: then that molder's rate.
- */
-async function molderRate(client, ctx, molderId, molding, saved, previous) {
-  if (previous?.molder_id === molderId && hasRate(saved.get(molding.id))) return saved.get(molding.id);
-  const {
-    rows: [molder],
-  } = await client.query("SELECT rate FROM workers WHERE factory_id = $1 AND id = $2", [ctx.factory.id, molderId]);
-  return hasRate(molder?.rate) ? molder.rate : molding.rate;
 }
 
 const auditView = (count) => ({
@@ -196,7 +187,7 @@ const fields = (data) => [
 export async function createBrickCount(ctx, data) {
   return withTransaction(async (client) => {
     const period = await periodFor(client, ctx.factory.id, data.counted_on);
-    const workRows = await workRowsFor(client, ctx, data, new Map());
+    const workRows = await workRowsFor(client, ctx, data, noSavedRates());
 
     const {
       rows: [count],
@@ -234,16 +225,10 @@ async function lockCount(client, ctx, countId) {
 /** Replaces the whole count; the pay and stock it made are written again. */
 export async function updateBrickCount(ctx, countId, data) {
   return withTransaction(async (client) => {
-    const previous = await lockCount(client, ctx, countId);
+    await lockCount(client, ctx, countId);
     const before = await getBrickCount(client, ctx, countId);
     const period = await periodFor(client, ctx.factory.id, data.counted_on);
-    const workRows = await workRowsFor(
-      client,
-      ctx,
-      data,
-      await savedRates(client, "brick_count_id", countId),
-      previous,
-    );
+    const workRows = await workRowsFor(client, ctx, data, await savedRates(client, "brick_count_id", countId));
 
     const {
       rows: [count],

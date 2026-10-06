@@ -11,6 +11,13 @@ void main() {
     code: 'kiln_loading',
     name: 'Kiln loading',
     payUnit: PayUnit.per1000,
+    isGroup: true,
+    isActive: true,
+  );
+  const custom = WorkType(
+    id: 'custom',
+    name: 'Patthar',
+    payUnit: PayUnit.per1000,
     rate: 100,
     isGroup: true,
     isActive: true,
@@ -24,12 +31,24 @@ void main() {
     isGroup: true,
     isActive: true,
   );
-  Worker worker(String id) => Worker(id: id, name: id, isActive: true);
+  Worker worker(String id, [double? rate]) =>
+      Worker(id: id, name: id, isActive: true, rate: rate, rateUnit: rate == null ? null : PayUnit.per1000);
 
   test('rates per 1000, per lakh, per day and per trip', () {
-    expect(loading.payFor(22000), 2200);
+    expect(loading.payFor(22000), isNull);
+    expect(loading.payFor(22000, rate: 100), 2200);
+    expect(custom.payFor(22000), 2200);
+    expect(loading.atOwnRate, isTrue);
+    expect(custom.atOwnRate, isFalse);
     expect(
-      const WorkType(id: 's', name: 's', payUnit: PayUnit.perLakh, rate: 2500, isGroup: true, isActive: true).payFor(550000),
+      const WorkType(
+        id: 's',
+        name: 's',
+        payUnit: PayUnit.perLakh,
+        rate: 2500,
+        isGroup: true,
+        isActive: true,
+      ).payFor(550000),
       13750,
     );
     expect(
@@ -49,18 +68,50 @@ void main() {
     expect(splitEqually(0.05, 3), [0.02, 0.02, 0.01]);
   });
 
-  test('a group shares the rate total equally', () {
-    final group = GroupDraft(type: loading, workers: [worker('a'), worker('b')]);
-    final total = group.total(bricks: 22000, rate: 100);
-    expect(total, 2200);
-    expect(group.shares(total), [1100, 1100]);
-    expect(group.toJson(total), {
+  test('own rates: the bricks are shared, each worker paid at their own rate', () {
+    final group = GroupDraft(type: loading, workers: [worker('a', 100), worker('b', 120)]);
+    expect(group.pay(bricks: 22000), [1100, 1320]);
+    expect(group.total(bricks: 22000, rate: null), 2420);
+    expect(group.toJson(bricks: 22000), {
       'work_type_id': 'loading',
       'workers': [
         {'worker_id': 'a'},
         {'worker_id': 'b'},
       ],
     });
+  });
+
+  test('own rates: an edited entry keeps the rate it was made with', () {
+    final group = GroupDraft(type: loading, workers: [worker('a', 100)], savedRates: {'a': 80});
+    expect(group.pay(bricks: 10000), [800]);
+  });
+
+  test('own rates: a worker whose rate is not known has no pay', () {
+    final group = GroupDraft(type: loading, workers: [worker('a', 100), worker('b')]);
+    expect(group.pay(bricks: 10000), [500, null]);
+    expect(group.total(bricks: 10000, rate: null), 500);
+  });
+
+  test('own rates: a share set by hand leaves the others as they are', () {
+    final group = GroupDraft(type: loading, workers: [worker('a', 100), worker('b', 100)]);
+    group.amounts['a'] = 700;
+    expect(group.pay(bricks: 10000), [700, 500]);
+    expect(group.fits(1200), isTrue);
+    expect(group.toJson(bricks: 10000), {
+      'work_type_id': 'loading',
+      'total_amount': '1200.00',
+      'workers': [
+        {'worker_id': 'a', 'amount': '700.00'},
+        {'worker_id': 'b', 'amount': '500.00'},
+      ],
+    });
+  });
+
+  test('a kind with its own rate shares the total equally', () {
+    final group = GroupDraft(type: custom, workers: [worker('a'), worker('b')]);
+    final total = group.total(bricks: 22000, rate: 100);
+    expect(total, 2200);
+    expect(group.shares(total), [1100, 1100]);
   });
 
   test('one share set by hand: the others share what is left', () {
@@ -70,14 +121,14 @@ void main() {
     expect(total, 1500);
     expect(group.shares(total), [700, 400, 400]);
     expect(group.fits(total), isTrue);
-    expect(group.toJson(total)['total_amount'], '1500.00');
+    expect(group.toJson(bricks: 4000, trips: 1, rate: 1500)['total_amount'], '1500.00');
 
     group.amounts['b'] = 1000;
     expect(group.fits(total), isFalse);
   });
 
   test('every share set by hand makes the total', () {
-    final group = GroupDraft(type: loading, workers: [worker('a'), worker('b')]);
+    final group = GroupDraft(type: custom, workers: [worker('a'), worker('b')]);
     group.amounts
       ..['a'] = 1300
       ..['b'] = 900;

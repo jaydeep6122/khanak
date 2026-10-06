@@ -160,13 +160,15 @@ class _SaleFormScreenState extends State<SaleFormScreen> {
       for (final share in group.workers)
         core.worker.byId(share.workerId) ?? Worker(id: share.workerId, name: share.name, isActive: true),
     ];
-    _loaders = GroupDraft(type: type, workers: workers);
-    final equal = splitEqually(group.total, workers.length);
-    for (var i = 0; i < workers.length; i++) {
-      if ((group.workers[i].amount - equal[i]).abs() > 0.001) {
-        _loaders!.amounts[workers[i].id] = group.workers[i].amount;
-      }
-    }
+    _loaders = GroupDraft(
+      type: type,
+      workers: workers,
+      savedRates: {
+        for (final share in group.workers)
+          if (share.rate != null) share.workerId: share.rate!,
+      },
+    );
+    markHandSetShares(_loaders!, group, bricks: sale.quantity, trips: _trips);
   }
 
   /// Starts the rate at this customer's last price, or the last sale's.
@@ -199,8 +201,8 @@ class _SaleFormScreenState extends State<SaleFormScreen> {
   }
 
   List<WorkType> _loadingChoices(Core core) => (core.factory.workTypes.value ?? const <WorkType>[])
-      .where((t) => t.isActive && t.isGroup && !{'stacking', 'unloading', 'drying_carry'}.contains(t.code))
-      .where((t) => t.payUnit == PayUnit.per1000 || t.payUnit == PayUnit.perTrip)
+      .where((t) => t.isActive && t.isGroup && !{'stacking', 'unloading'}.contains(t.code))
+      .where((t) => t.payUnit.byBricks || t.payUnit == PayUnit.perTrip)
       .toList();
 
   Future<void> _pickCustomer() async {
@@ -233,7 +235,13 @@ class _SaleFormScreenState extends State<SaleFormScreen> {
         rate: keptOrCurrentRate(_savedRates[loaders.type.id], loaders.type),
       );
       if (!loaders.fits(total)) return showErrorToast('shares_too_much'.tr());
-      groups.add(loaders.toJson(total));
+      groups.add(
+        loaders.toJson(
+          bricks: _bricks,
+          trips: _trips,
+          rate: keptOrCurrentRate(_savedRates[loaders.type.id], loaders.type),
+        ),
+      );
     }
 
     final name = _nameController.text.trim();

@@ -17,6 +17,7 @@ const router = Router({ mergeParams: true });
 const COLUMNS = "id, code, name, pay_unit, rate, is_group, is_active, sort_order";
 
 // Monthly pay is set on each worker, so owners cannot add per_month kinds.
+// A kind per 1000 with no rate is paid at each worker's own rate.
 const payUnit = z.enum(["per_1000", "per_lakh", "per_day", "per_trip", "lumpsum"]);
 
 const createSchema = z.object({
@@ -40,7 +41,8 @@ const updateSchema = z
 /** The rate column must be set exactly when the pay unit has a rate. */
 function checkShape({ name, pay_unit, rate, is_group }) {
   const rated = pay_unit !== "lumpsum" && pay_unit !== "per_month";
-  if (rated && (rate === null || rate === undefined)) throw new ApiError(400, `"${name}" needs a rate`);
+  const atOwnRate = pay_unit === "per_1000";
+  if (rated && !atOwnRate && (rate === null || rate === undefined)) throw new ApiError(400, `"${name}" needs a rate`);
   if (!rated && rate !== null && rate !== undefined) throw new ApiError(400, `"${name}" has no rate`);
   if (is_group && pay_unit === "per_day") throw new ApiError(400, "Day work is paid to each worker, not shared");
 }
@@ -94,6 +96,12 @@ router.patch("/:typeId", requireRole("munim"), idParams("typeId"), validate(upda
       throw new ApiError(400, "How a built-in kind of work is paid cannot be changed; add a new kind instead");
     }
     checkShape({ ...before, ...req.body });
+    // Brick work paid at each worker's own rate stays so, and a kind with a
+    // rate of its own keeps one.
+    const changed = { ...before, ...req.body };
+    if (before.pay_unit === "per_1000" && changed.pay_unit === "per_1000" && (before.rate == null) !== (changed.rate == null)) {
+      throw new ApiError(400, before.rate == null ? `"${before.name}" is paid at each worker's own rate` : `"${before.name}" needs a rate`);
+    }
     if (req.body.rate !== undefined && req.body.rate !== null && !hasRate(req.body.rate)) {
       throw new ApiError(400, "A rate must be above zero");
     }

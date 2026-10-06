@@ -4,33 +4,16 @@ import { date, id, listQuery, money, optionalText, phone, queryBoolean, text } f
 // paatla, bharai, khadkaniyo, nikasi, driver, roj, other.
 export const MAIN_WORKS = ["molder", "loader", "stacker", "unloader", "driver", "daily", "other"];
 
-/** A molder (per 1000 bricks) and a day worker (per day) must have a rate of their own. */
-export const HAS_OWN_RATE = new Set(["molder", "daily"]);
-
-/**
- * A bharai or nikasi worker is paid either at the group's rate per 1000, or
- * by the day: then their own rate is a day rate, and they are not picked for
- * group work; their days are typed in as day work.
- */
-export const MAY_BE_PAID_BY_DAY = new Set(["loader", "unloader"]);
-
-/**
- * Group work each main work is paid for, at the group's rate. That rate must
- * be set before such a worker is added: it is asked right there (sent as
- * group_rates) the first time. Loading a vehicle is asked at the first sale.
- */
-export const GROUP_WORK = {
-  // Carrying to dry and loading the kiln are paid at the one loading rate.
-  loader: ["kiln_loading"],
-  stacker: ["stacking"],
-  unloader: ["unloading"],
-};
+/** How a worker's own rate is counted: per 1000 bricks, or per day. */
+export const RATE_UNITS = ["per_1000", "per_day"];
 
 const workerFields = {
   name: text(255),
   main_work: z.enum(MAIN_WORKS),
-  // The worker's own rate, when it differs from the factory's.
+  // Every worker but a driver is paid at a rate of their own: per 1000
+  // bricks for their share of the bricks, or per day. Both or neither.
   rate: money({ gt: 0 }).nullable().optional(),
+  rate_unit: z.enum(RATE_UNITS).nullable().optional(),
   nickname: optionalText(100),
   village: optionalText(100),
   phone: phone.nullable().optional(),
@@ -38,37 +21,24 @@ const workerFields = {
   // Drivers: a monthly salary from a date. Both or neither.
   monthly_salary: money({ gt: 0 }).nullable().optional(),
   salary_from: date.nullable().optional(),
-  // Rates of group work not priced yet, set together with the worker.
-  group_rates: z
-    .array(z.object({ work_type_id: id, rate: money({ gt: 0 }) }))
-    .max(5)
-    .optional(),
 };
 
 const salaryPair = (worker) =>
   (worker.monthly_salary == null) === (worker.salary_from == null);
 
-/** A bharai or nikasi worker with a day rate of their own: not paid as a group. */
-export const paidByDay = (worker) => MAY_BE_PAID_BY_DAY.has(worker.main_work) && worker.rate != null;
-
 /**
- * What is wrong with how this worker is paid, or null. No two molders are
- * paid alike, so a molder and a day worker each need their own rate, and a
- * driver needs a monthly salary. Group work is paid at the group's rate.
+ * What is wrong with how this worker is paid, or null. A driver is paid a
+ * monthly salary; everyone else at a rate of their own, per 1000 bricks or
+ * per day, set when they are added.
  */
 export function ownPayProblem(worker) {
-  if (HAS_OWN_RATE.has(worker.main_work) && worker.rate == null) {
-    return {
-      path: "rate",
-      message: worker.main_work === "molder" ? "Give this molder's rate per 1000 bricks" : "Give this worker's rate per day",
-    };
+  if (worker.main_work === "driver") {
+    if (worker.monthly_salary == null) return { path: "monthly_salary", message: "Give the driver's monthly salary" };
+    if (worker.rate != null) return { path: "rate", message: "A driver is paid a monthly salary, not a rate" };
+    return null;
   }
-  if (!HAS_OWN_RATE.has(worker.main_work) && !MAY_BE_PAID_BY_DAY.has(worker.main_work) && worker.rate != null) {
-    return { path: "rate", message: "Only a molder, a day worker, or bharai or nikasi paid by the day has a rate of their own" };
-  }
-  if (worker.main_work === "driver" && worker.monthly_salary == null) {
-    return { path: "monthly_salary", message: "Give the driver's monthly salary" };
-  }
+  if (worker.rate == null) return { path: "rate", message: "Give this worker's rate per 1000 bricks or per day" };
+  if (worker.rate_unit == null) return { path: "rate_unit", message: "Is the rate per 1000 bricks or per day?" };
   return null;
 }
 

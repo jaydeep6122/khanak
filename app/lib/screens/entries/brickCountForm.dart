@@ -36,8 +36,9 @@ import 'package:khanak/types/worker.dart';
 /// paid for it: the count cannot be saved without both (no molder when an
 /// earlier count already paid for them), nor without the kiln they went
 /// into, or the truck that carried them. Bricks going into a kiln also pay
-/// the khadkaniya who stacked them there, per lakh: this is the only place
-/// they are paid. With [countId] it edits that count.
+/// the khadkaniya who stacked them there: this is the only place they are
+/// paid. Everyone is paid at their own rate per 1000 bricks; a group shares
+/// the bricks. With [countId] it edits that count.
 class BrickCountFormScreen extends StatefulWidget {
   final String? countId;
 
@@ -62,12 +63,15 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
   Truck? _truck;
   GroupDraft? _loaders;
 
-  /// The khadkaniya who stacked the bricks in the kiln, paid per lakh.
+  /// The khadkaniya who stacked the bricks in the kiln.
   GroupDraft? _stackers;
 
-  /// Rates an edited count was made with, by work type id. A new count uses
-  /// today's rates.
+  /// Rates an edited count was made with, by work type id, for work with a
+  /// rate of its own (loading per trip). A new count uses today's rates.
   final Map<String, double> _savedRates = {};
+
+  /// The molder's rate an edited count was made with.
+  double? _savedMolderRate;
   BrickCount? _editing;
   bool _loading = true;
   bool _busy = false;
@@ -137,8 +141,7 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
         core.factory.kilns.value?.where((k) => k.id == count.kilnId).firstOrNull ??
         (count.kilnId == null ? null : Kiln(id: count.kilnId!, name: count.kilnName ?? '', isActive: true));
 
-    final molding = core.factory.workType('molding');
-    if (molding != null && count.molderRate != null) _savedRates[molding.id] = count.molderRate!;
+    _savedMolderRate = count.molderRate;
     // A molder paid other than by the rate had the amount set by hand.
     final byRate = count.quantity * (count.molderRate ?? 0) / 1000;
     if (count.molderPay != null && (count.molderPay! - byRate).abs() > 0.005) {
@@ -154,11 +157,15 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
         for (final share in group.workers)
           core.worker.byId(share.workerId) ?? Worker(id: share.workerId, name: share.name, isActive: true),
       ];
-      final draft = GroupDraft(type: type, workers: workers);
-      final equal = splitEqually(group.total, workers.length);
-      for (var i = 0; i < group.workers.length; i++) {
-        if ((group.workers[i].amount - equal[i]).abs() > 0.001) draft.amounts[workers[i].id] = group.workers[i].amount;
-      }
+      final draft = GroupDraft(
+        type: type,
+        workers: workers,
+        savedRates: {
+          for (final share in group.workers)
+            if (share.rate != null) share.workerId: share.rate!,
+        },
+      );
+      markHandSetShares(draft, group, bricks: count.quantity, trips: count.trips);
       if (type.code == 'stacking') {
         _stackers = draft;
       } else {
@@ -172,34 +179,33 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
 
   double? _rate(WorkType? type) => type == null ? null : keptOrCurrentRate(_savedRates[type.id], type);
 
-  /// Each molder has their own rate, as on the server: an edited count keeps
-  /// the rate it was made with while the molder stays the same.
-  double _molderRate(WorkType molding) {
-    final saved = _savedRates[molding.id];
-    if (saved != null && saved > 0 && _molder?.id == _editing?.molderId) return saved;
-    final own = _molder?.rate ?? 0;
-    return own > 0 ? own : molding.rate ?? 0;
+  /// Each molder has their own rate per 1000 bricks, as on the server: an
+  /// edited count keeps the rate it was made with while the molder stays the
+  /// same. 0 when not known (a supervisor does not see rates).
+  double _molderRate() {
+    final saved = _savedMolderRate ?? 0;
+    if (saved > 0 && _molder?.id == _editing?.molderId) return saved;
+    return _molder?.brickRate ?? 0;
   }
+
+  /// A molder paid by the day earns nothing from counts.
+  bool get _molderByDay => _molder?.paidByDay == true && _molderAmount == null;
 
   /// Molding is paid per 1000 bricks.
-  double _molderPay(WorkType molding) => _molderAmount ?? _bricks * _molderRate(molding) / 1000;
+  double _molderPay() => _molderAmount ?? (_molderByDay ? 0 : _paisa(_bricks * _molderRate() / 1000));
 
-  /// What carrying is paid as unless the owner picks otherwise: carrying to
-  /// drying, or loading the kiln.
-  WorkType? _defaultCarry(Core core, CountPlace place) =>
-      core.factory.workType(place == CountPlace.kiln ? 'kiln_loading' : 'drying_carry') ??
-      core.factory.workType('kiln_loading');
+  static double _paisa(double amount) => (amount * 100).round() / 100;
 
-  /// Kinds of work the carrying group can be paid as: per 1000 bricks, or per
-  /// trip when the truck carried them. Loading the kiln is not offered for
-  /// carrying to dry, nor the other way round.
-  List<WorkType> _loadingChoices(Core core) {
-    final other = _reason.intoKiln ? 'drying_carry' : 'kiln_loading';
-    return (core.factory.workTypes.value ?? const <WorkType>[])
-        .where((t) => t.isActive && t.isGroup && !{'stacking', 'unloading', other}.contains(t.code))
-        .where((t) => t.payUnit == PayUnit.per1000 || (t.payUnit == PayUnit.perTrip && _reason.byTruck))
-        .toList();
-  }
+  /// Carrying, to dry or into the kiln, is paid as loading unless the owner
+  /// picks otherwise.
+  WorkType? _defaultCarry(Core core, CountPlace place) => core.factory.workType('kiln_loading');
+
+  /// Kinds of work the carrying group can be paid as: by the bricks, or per
+  /// trip when the truck carried them.
+  List<WorkType> _loadingChoices(Core core) => (core.factory.workTypes.value ?? const <WorkType>[])
+      .where((t) => t.isActive && t.isGroup && !{'stacking', 'unloading'}.contains(t.code))
+      .where((t) => t.payUnit.byBricks || (t.payUnit == PayUnit.perTrip && _reason.byTruck))
+      .toList();
 
   bool get _needsMolder => !_alreadyCounted;
   bool get _needsKiln => _reason.intoKiln;
@@ -282,11 +288,11 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
     if (_needsKiln && (stackers == null || stackers.workers.isEmpty)) return showErrorToast('pick_stackers_first'.tr());
     if (!valid) return;
 
-    // Nothing is priced from a missing rate: it is asked for here, the
-    // first time a kind of work is used.
-    final molding = core.factory.workType('molding')!;
-    if (_needsMolder && _molderAmount == null && _molderRate(molding) <= 0) {
-      if (await ensureRate(context, molding) == null || !mounted) return;
+    // Nothing is priced from a missing rate: a worker's own rate is set on
+    // the worker, a kind's rate is asked for here the first time it is used.
+    // (A supervisor does not see rates; the server checks them.)
+    if (_needsMolder && !_molderByDay && _molderAmount == null && _molderRate() <= 0 && canSetRates(context)) {
+      return showErrorToast('worker_rate_missing'.tr(namedArgs: {'name': _molder!.name}));
     }
     if (_needsCarriers && !await ensureGroupRate(context, loaders, _rate(loaders.type))) return;
     if (!mounted) return;
@@ -298,12 +304,12 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
     if (_needsCarriers) {
       final total = loaders.total(bricks: _bricks, trips: _trips, rate: _rate(loaders.type));
       if (!loaders.fits(total)) return showErrorToast('shares_too_much'.tr());
-      groups.add(loaders.toJson(total));
+      groups.add(loaders.toJson(bricks: _bricks, trips: _trips, rate: _rate(loaders.type)));
     }
     if (_needsKiln) {
       final total = stackers!.total(bricks: _bricks, rate: _rate(stackers.type));
       if (!stackers.fits(total)) return showErrorToast('shares_too_much'.tr());
-      groups.add(stackers.toJson(total));
+      groups.add(stackers.toJson(bricks: _bricks, rate: _rate(stackers.type)));
     }
 
     final data = {
@@ -353,6 +359,7 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
     final colors = context.colors;
     final molding = core.factory.workType('molding');
     final canChangeAmounts = !core.isSupervisor;
+    final seesRates = canSetRates(context);
     final title = widget.countId == null ? 'action_brick_count'.tr() : 'edit_count'.tr();
 
     if (_loading || molding == null || _loaders == null) {
@@ -363,7 +370,7 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
     }
 
     final loaders = _loaders!;
-    final molderPay = _molderPay(molding);
+    final molderPay = _molderPay();
     final loaderTotal = loaders.total(bricks: _bricks, trips: _trips, rate: _rate(loaders.type));
     final stackers = _stackers;
     final stackerTotal = stackers == null || stackers.workers.isEmpty
@@ -397,7 +404,11 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
           label: 'molder_short'.tr(),
           title: _molder == null
               ? 'pick_molder'.tr()
-              : '${_molder!.displayName} · ${Formatters.formatCurrency(_molderRate(molding))} / 1000',
+              : _molder!.paidByDay
+              ? '${_molder!.displayName} · ${'paid_by_day'.tr()}'
+              : _molderRate() > 0
+              ? '${_molder!.displayName} · ${Formatters.formatCurrency(_molderRate())} / 1000'
+              : _molder!.displayName,
           titleColor: _molder == null ? (_tried ? colors.danger : colors.primary) : null,
           onTap: _pickMolder,
         ),
@@ -490,7 +501,7 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
             ),
             const SizedBox(height: AppTheme.space2xl),
             if (choices.isNotEmpty) GroupedSection(children: choices),
-            if (_needsMolder && _molder != null && _bricks > 0) ...[
+            if (_needsMolder && _molder != null && _bricks > 0 && (seesRates || _molderAmount != null)) ...[
               const SizedBox(height: AppTheme.spaceLg),
               GroupedSection(
                 caption: 'pay'.tr(),
@@ -500,10 +511,14 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
                     title: _molder!.name,
                     subtitle: _molderAmount != null
                         ? 'share_set_by_hand'.tr()
+                        : _molderByDay
+                        ? 'molder_by_day_line'.tr()
+                        : _molderRate() <= 0
+                        ? 'worker_rate_not_set'.tr()
                         : 'molder_pay_line'.tr(
                             namedArgs: {
                               'bricks': Formatters.formatCount(_bricks),
-                              'rate': Formatters.formatCurrency(_molderRate(molding)),
+                              'rate': Formatters.formatCurrency(_molderRate()),
                             },
                           ),
                     value: Formatters.formatCurrency(molderPay),

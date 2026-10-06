@@ -94,13 +94,15 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
     super.dispose();
   }
 
-  /// The rate this worker gets for this kind of work: a day worker's own
-  /// rate for day work, otherwise the factory's.
+  /// The rate this worker gets for this kind of work, as on the server: their
+  /// own day rate for day work, their own rate per 1000 for brick work paid
+  /// at each worker's rate, otherwise the factory's.
   double? get _rate {
     final type = _type;
     if (type == null) return null;
     final worker = _worker;
-    if (type.code == 'daily' && worker?.mainWork == MainWork.daily && worker?.rate != null) return worker!.rate;
+    if (type.atOwnRate) return worker?.brickRate;
+    if (type.payUnit == PayUnit.perDay && worker?.paidByDay == true) return worker!.rate;
     return type.rate;
   }
 

@@ -1,4 +1,4 @@
-import { addWorker, balanceOf, closeDb, createFactory, data, daysAgo, factoryClient, molder, setRates, signup, today, carried } from "./helpers.js";
+import { addWorker, balanceOf, closeDb, createFactory, data, daysAgo, factoryClient, molder, per1000, setRates, signup, today, carried } from "./helpers.js";
 
 // The planning walk-through: one ordinary season at the owner's kiln.
 describe("an ordinary season", () => {
@@ -13,12 +13,12 @@ describe("an ordinary season", () => {
     f = factoryClient(owner.auth, factory.id);
     types = await setRates(f);
     ramesh = await addWorker(f, "Ramesh", molder(550));
-    dinesh = await addWorker(f, "Dinesh");
-    jagdish = await addWorker(f, "Jagdish");
-    mahesh = await addWorker(f, "Mahesh");
-    kishan = await addWorker(f, "Kishan");
-    n1 = await addWorker(f, "Nikasi 1");
-    n2 = await addWorker(f, "Nikasi 2");
+    dinesh = await addWorker(f, "Dinesh", { main_work: "loader", ...per1000(100) });
+    jagdish = await addWorker(f, "Jagdish", { main_work: "loader", ...per1000(100) });
+    mahesh = await addWorker(f, "Mahesh", { main_work: "stacker", ...per1000(25) });
+    kishan = await addWorker(f, "Kishan", { main_work: "unloader", ...per1000(120) });
+    n1 = await addWorker(f, "Nikasi 1", { main_work: "unloader", ...per1000(120) });
+    n2 = await addWorker(f, "Nikasi 2", { main_work: "unloader", ...per1000(120) });
     [kiln] = data(await f.get("/kilns", undefined, 200));
   });
 
@@ -74,8 +74,8 @@ describe("an ordinary season", () => {
     expect(stock.kilns).toEqual([expect.objectContaining({ id: kiln.id, name: "Bhatho 1", quantity: 18000 })]);
   });
 
-  test("khadkaniya are paid per lakh bricks stacked, from the count, never by hand", async () => {
-    // 18,000 bricks at ₹2,500 a lakh.
+  test("khadkaniya are paid for the bricks stacked, from the count, never by hand", async () => {
+    // 18,000 bricks at ₹25 per 1000.
     expect(await balanceOf(f, mahesh.id)).toBe("450.00");
     await f.post(
       "/work-entries",
@@ -127,7 +127,8 @@ describe("an ordinary season", () => {
       },
       201,
     );
-    expect(data(res).groups[0]).toMatchObject({ total: "4800.00" });
+    // 10,000 bricks each: three at ₹120 per 1000, Jagdish at his ₹100.
+    expect(data(res).groups[0]).toMatchObject({ total: "4600.00" });
     expect(data(res).warnings).toEqual([]);
     expect(await balanceOf(f, n1.id)).toBe("1200.00");
     expect(data(await f.get("/reports/stock", undefined, 200))).toMatchObject({ raw: 0, kiln: 0, fired: 40000 });

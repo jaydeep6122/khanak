@@ -11,10 +11,11 @@ import { periodFor } from "../../services/periods.js";
 import { postKilnUnloading } from "../../services/posting.js";
 import {
   assertNotPaidByDay,
-  assertWorkersExist,
   groupRows,
+  groupWorkerIds,
+  loadWorkers,
   loadWorkTypes,
-  rateLookup,
+  noSavedRates,
   readWork,
   savedRates,
 } from "../../services/work-groups.js";
@@ -73,15 +74,12 @@ async function workRowsFor(client, ctx, data, saved) {
   ]);
   if (!rowCount) throw new ApiError(400, "Unknown kiln_id");
   const types = await loadWorkTypes(client, ctx.factory.id);
-  await assertWorkersExist(
-    client,
-    ctx.factory.id,
-    (data.groups ?? []).flatMap((group) => group.workers.map((worker) => worker.worker_id)),
-  );
-  await assertNotPaidByDay(client, ctx.factory.id, data.groups);
+  const workers = await loadWorkers(client, ctx.factory.id, groupWorkerIds(data.groups));
+  assertNotPaidByDay(data.groups, workers);
   return groupRows(data.groups, types, {
     bricks: data.quantity,
-    rateFor: rateLookup(saved),
+    saved,
+    workers,
     allowAmounts: ctx.role !== "supervisor",
   });
 }
@@ -142,7 +140,7 @@ router.post("/", validate(unloadingSchema), async (req, res) => {
   const data = req.body;
   const result = await withTransaction(async (client) => {
     const period = await periodFor(client, ctx.factory.id, data.unloaded_on);
-    const workRows = await workRowsFor(client, ctx, data, new Map());
+    const workRows = await workRowsFor(client, ctx, data, noSavedRates());
     const {
       rows: [unloading],
     } = await client.query(

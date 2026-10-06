@@ -9,8 +9,9 @@ import 'package:khanak/helpers/formatters.dart';
 import 'package:khanak/helpers/toastNotifications.dart';
 import 'package:khanak/types/work.dart';
 
-/// True when [type] is paid by a rate that has not been set yet.
-bool rateMissing(WorkType type) => type.payUnit.hasRate && (type.rate ?? 0) <= 0;
+/// True when [type] is paid by a rate of its own that has not been set yet.
+/// (Brick work at each worker's own rate has none.)
+bool rateMissing(WorkType type) => type.payUnit.hasRate && !type.atOwnRate && (type.rate ?? 0) <= 0;
 
 /// The owner and munim set rates; there is no rates screen, so a rate is
 /// asked the first time a kind of work is used.

@@ -30,12 +30,34 @@ describe("splitEqually", () => {
 });
 
 describe("resolveGroup", () => {
-  const loading = { id: "t1", name: "Kiln loading", pay_unit: "per_1000", rate: "100", is_group: true };
+  const loading = { id: "t1", name: "Kiln loading", pay_unit: "per_1000", rate: null, is_group: true };
+  const custom = { id: "t3", name: "Patthar", pay_unit: "per_1000", rate: "100", is_group: true };
   const truck = { id: "t2", name: "Truck loading", pay_unit: "per_trip", rate: "1500", is_group: true };
-  const options = { bricks: 22000, trips: null, rateFor: (type) => type.rate, allowAmounts: true };
+  const own = { a: "100", b: "100", c: "120" };
+  const options = {
+    bricks: 22000,
+    trips: null,
+    rateFor: (type) => type.rate,
+    workerRate: (type, workerId) => ({ name: workerId, rate: own[workerId] ?? null }),
+    allowAmounts: true,
+  };
 
-  test("splits the rate's total equally", () => {
-    const rows = resolveGroup({ workers: [{ worker_id: "a" }, { worker_id: "b" }] }, loading, options);
+  test("no rate of its own: the bricks are shared equally, each paid at their own rate", () => {
+    const rows = resolveGroup({ workers: [{ worker_id: "a" }, { worker_id: "c" }] }, loading, options);
+    // 11,000 bricks each: ₹100 and ₹120 per 1000.
+    expect(rows.map((row) => row.amount)).toEqual(["1100.00", "1320.00"]);
+    expect(rows[1]).toMatchObject({ quantity: "11000", rate: "120", group_total: "2420.00", group_size: 2 });
+  });
+
+  test("every worker's rate is needed, unless the amounts are typed in", () => {
+    const group = { workers: [{ worker_id: "a" }, { worker_id: "nobody" }] };
+    expect(() => resolveGroup(group, loading, options)).toThrow(/No rate per 1000 bricks is set for "nobody"/);
+    const rows = resolveGroup({ ...group, total_amount: "1000" }, loading, options);
+    expect(rows.map((row) => row.amount)).toEqual(["500.00", "500.00"]);
+  });
+
+  test("a kind with a rate of its own splits the rate's total equally", () => {
+    const rows = resolveGroup({ workers: [{ worker_id: "a" }, { worker_id: "b" }] }, custom, options);
     expect(rows.map((row) => row.amount)).toEqual(["1100.00", "1100.00"]);
     expect(rows[0]).toMatchObject({ quantity: 22000, rate: "100", group_total: "2200.00", group_size: 2 });
   });
