@@ -299,6 +299,11 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
     if (_needsKiln && !await ensureGroupRate(context, stackers!, _rate(stackers.type))) return;
     if (!mounted) return;
     setState(() {});
+    // Each worker's bricks must add up to the bricks counted.
+    for (final group in [if (_needsCarriers) loaders, if (_needsKiln) stackers!]) {
+      final problem = group.bricksProblem(_bricks);
+      if (problem != null) return showErrorToast(problem);
+    }
 
     final groups = <Map<String, dynamic>>[];
     if (_needsCarriers) {

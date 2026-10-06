@@ -56,6 +56,22 @@ describe("resolveGroup", () => {
     expect(rows.map((row) => row.amount)).toEqual(["500.00", "500.00"]);
   });
 
+  test("each worker's bricks, at their own rate, must add up to the bricks", () => {
+    const group = { workers: [{ worker_id: "a", bricks: 15000 }, { worker_id: "c", bricks: 7000 }] };
+    const rows = resolveGroup(group, loading, options);
+    // 15,000 at ₹100 and 7,000 at ₹120 per 1000.
+    expect(rows.map((row) => row.amount)).toEqual(["1500.00", "840.00"]);
+    expect(rows.map((row) => row.quantity)).toEqual(["15000", "7000"]);
+    expect(rows[0].group_total).toBe("2340.00");
+
+    const short = { workers: [{ worker_id: "a", bricks: 15000 }, { worker_id: "c", bricks: 6000 }] };
+    expect(() => resolveGroup(short, loading, options)).toThrow(/add up to 21000, not 22000/);
+    const some = { workers: [{ worker_id: "a", bricks: 22000 }, { worker_id: "c" }] };
+    expect(() => resolveGroup(some, loading, options)).toThrow(/every worker's bricks/);
+    const trip = { workers: [{ worker_id: "a", bricks: 1 }] };
+    expect(() => resolveGroup(trip, truck, { ...options, trips: 1 })).toThrow(/only for work paid at each worker's own rate/);
+  });
+
   test("a kind with a rate of its own splits the rate's total equally", () => {
     const rows = resolveGroup({ workers: [{ worker_id: "a" }, { worker_id: "b" }] }, custom, options);
     expect(rows.map((row) => row.amount)).toEqual(["1100.00", "1100.00"]);

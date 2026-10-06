@@ -111,4 +111,33 @@ describe("carrying bricks to dry", () => {
       400,
     );
   });
+
+  test("each carrier's bricks may be given, and must add up to the count", async () => {
+    const body = (counts) => ({
+      counted_on: today(),
+      reason: "drying_by_workers",
+      quantity: 10000,
+      molder_id: ramesh.id,
+      groups: [
+        {
+          work_type_id: types.kiln_loading.id,
+          workers: [
+            { worker_id: dinesh.id, bricks: counts[0] },
+            { worker_id: jagdish.id, bricks: counts[1] },
+          ],
+        },
+      ],
+    });
+    const before = Number(await balanceOf(f, dinesh.id));
+    const wrong = await f.post("/brick-counts", body([6000, 3000]), 400);
+    expect(wrong.body.message).toMatch(/add up to 9000, not 10000/);
+    const count = data(await f.post("/brick-counts", body([7000, 3000]), 201));
+    // ₹60 per 1000: 7,000 → ₹420, 3,000 → ₹180.
+    expect(count.groups[0]).toMatchObject({ total: "600.00" });
+    expect(count.groups[0].workers.find((w) => w.worker_id === dinesh.id)).toMatchObject({
+      quantity: "7000.000",
+      amount: "420.00",
+    });
+    expect(Number(await balanceOf(f, dinesh.id)) - before).toBe(420);
+  });
 });

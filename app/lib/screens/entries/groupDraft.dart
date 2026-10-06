@@ -49,9 +49,16 @@ Future<bool> ensureGroupRate(BuildContext context, GroupDraft group, double? rat
   return true;
 }
 
-/// Marks the shares of a saved [group] that were typed by hand: those that
-/// differ from what the rates give.
+/// Takes the bricks each worker carried from a saved [group], then marks the
+/// shares that were typed by hand: those that differ from what the rates
+/// give.
 void markHandSetShares(GroupDraft draft, WorkGroup group, {required int bricks, int? trips}) {
+  if (draft.asksBricks) {
+    for (var i = 0; i < group.workers.length && i < draft.workers.length; i++) {
+      final carried = group.workers[i].quantity;
+      if (carried != null) draft.bricks[draft.workers[i].id] = carried.round();
+    }
+  }
   final byRate = draft.pay(bricks: bricks, trips: trips, rate: group.rate);
   final byHand = draft.type.atOwnRate
       ? [
@@ -73,9 +80,9 @@ double _paisa(double amount) => (amount * 100).round() / 100;
 /// One group of workers paid together while a count, unloading or sale is
 /// being filled in: who they are, and any amounts the owner set by hand.
 ///
-/// Work at each worker's own rate shares the bricks equally and pays each worker their
-/// share at their own rate. Other work shares one total from the kind's
-/// rate.
+/// Work at each worker's own rate pays each worker for the bricks they
+/// carried (typed in per worker, adding up to all the bricks) at their own
+/// rate. Other work shares one total from the kind's rate.
 class GroupDraft {
   WorkType type;
   final List<Worker> workers;
@@ -87,10 +94,40 @@ class GroupDraft {
   /// worker id (work per 1000 bricks). Kept while the worker stays in it.
   final Map<String, double> savedRates;
 
+  /// The bricks each worker carried, by worker id, as typed in (work at each
+  /// worker's own rate, more than one worker).
+  final Map<String, int> bricks;
+
   GroupDraft({required this.type, List<Worker>? workers, Map<String, double>? amounts, Map<String, double>? savedRates})
     : workers = workers ?? [],
       amounts = amounts ?? {},
-      savedRates = savedRates ?? {};
+      savedRates = savedRates ?? {},
+      bricks = {};
+
+  /// Each worker's bricks are typed in: work at each worker's own rate, done
+  /// by more than one. A lone worker carried them all.
+  bool get asksBricks => type.atOwnRate && workers.length > 1;
+
+  /// The bricks [worker] carried, out of [total]; null while not typed in.
+  int? bricksOf(Worker worker, int total) => asksBricks ? bricks[worker.id] : total;
+
+  /// The bricks typed in so far.
+  int bricksGiven() => workers.fold(0, (sum, w) => sum + (bricks[w.id] ?? 0));
+
+  /// Why the bricks typed in cannot be saved yet, or null: someone's are
+  /// missing, or they do not add up to [total].
+  String? bricksProblem(int total) {
+    if (!asksBricks) return null;
+    final missing = workers.where((w) => (bricks[w.id] ?? 0) <= 0).firstOrNull;
+    if (missing != null) return 'bricks_of_worker_missing'.tr(namedArgs: {'name': missing.name});
+    final given = bricksGiven();
+    if (given != total) {
+      return 'bricks_do_not_add_up'.tr(
+        namedArgs: {'given': Formatters.formatCount(given), 'total': Formatters.formatCount(total)},
+      );
+    }
+    return null;
+  }
 
   bool get _atOwnRate => type.atOwnRate;
 
@@ -101,16 +138,18 @@ class GroupDraft {
     return saved > 0 ? saved : worker.brickRate;
   }
 
-  /// Each worker's pay, in the order picked. Per 1000 bricks, a share set by
-  /// hand leaves the others as they are, and a worker whose rate is not
-  /// known has no pay (null). Otherwise the hand-set shares come out of the
-  /// rate's total and the others share what is left.
+  /// Each worker's pay, in the order picked. At each worker's own rate, a
+  /// share set by hand leaves the others as they are, and a worker whose
+  /// bricks or rate are not known has no pay (null). Otherwise the hand-set
+  /// shares come out of the rate's total and the others share what is left.
   List<double?> pay({required int bricks, int? trips, double? rate}) {
     if (_atOwnRate) {
-      final share = workers.isEmpty ? 0 : bricks / workers.length;
       return [
         for (final w in workers)
-          amounts[w.id] ?? (rateOf(w) == null ? null : _paisa(type.payFor(share, rate: rateOf(w))!)),
+          amounts[w.id] ??
+              (rateOf(w) == null || bricksOf(w, bricks) == null
+                  ? null
+                  : _paisa(type.payFor(bricksOf(w, bricks)!, rate: rateOf(w))!)),
       ];
     }
     return shares(total(bricks: bricks, trips: trips, rate: rate));
@@ -150,21 +189,22 @@ class GroupDraft {
   /// The group as the API takes it. Without hand-set amounts the server
   /// works the pay out itself; with any, every worker's amount is sent.
   Map<String, dynamic> toJson({required int bricks, int? trips, double? rate}) {
+    Map<String, dynamic> worker(Worker w, [double? amount]) => {
+      'worker_id': w.id,
+      if (asksBricks) 'bricks': this.bricks[w.id],
+      if (amount != null) 'amount': amount.toStringAsFixed(2),
+    };
     if (amounts.isEmpty) {
       return {
         'work_type_id': type.id,
-        'workers': [
-          for (final w in workers) {'worker_id': w.id},
-        ],
+        'workers': [for (final w in workers) worker(w)],
       };
     }
     final shares = [for (final amount in pay(bricks: bricks, trips: trips, rate: rate)) amount ?? 0.0];
     return {
       'work_type_id': type.id,
       'total_amount': shares.fold(0.0, (a, b) => a + b).toStringAsFixed(2),
-      'workers': [
-        for (var i = 0; i < workers.length; i++) {'worker_id': workers[i].id, 'amount': shares[i].toStringAsFixed(2)},
-      ],
+      'workers': [for (var i = 0; i < workers.length; i++) worker(workers[i], shares[i])],
     };
   }
 }
@@ -215,6 +255,7 @@ class GroupEditor extends StatelessWidget {
       ..addAll(picked);
     group.amounts.removeWhere((id, _) => !picked.any((w) => w.id == id));
     group.savedRates.removeWhere((id, _) => !picked.any((w) => w.id == id));
+    group.bricks.removeWhere((id, _) => !picked.any((w) => w.id == id));
     onChanged();
     // The first time this kind of work is used, the owner sets its rate
     // right here instead of in a separate screen.
@@ -258,18 +299,23 @@ class GroupEditor extends StatelessWidget {
     final empty = group.workers.isEmpty;
     final atOwnRate = group.type.atOwnRate;
 
-    /// Per 1000 bricks: each worker's share of the bricks at their rate.
+    /// At each worker's own rate: their bricks at their rate (only the rate
+    /// while their bricks are typed in beside it).
     String? ownRateLine(Worker worker) {
       if (!atOwnRate || !canSet) return null;
       final own = group.rateOf(worker);
       if (own == null) return 'worker_rate_not_set'.tr();
+      if (group.asksBricks) {
+        return 'own_rate_line'.tr(
+          namedArgs: {'rate': Formatters.formatCurrency(own), 'unit': 'rate_unit_per_1000'.tr()},
+        );
+      }
       return 'worker_share_line'.tr(
-        namedArgs: {
-          'bricks': Formatters.formatCount(bricks / group.workers.length),
-          'rate': Formatters.formatCurrency(own),
-        },
+        namedArgs: {'bricks': Formatters.formatCount(bricks), 'rate': Formatters.formatCurrency(own)},
       );
     }
+
+    String amountText(double? amount) => amount == null ? '—' : Formatters.formatCurrency(amount);
 
     final rows = <Widget>[
       for (var i = 0; i < group.workers.length; i++)
@@ -282,8 +328,37 @@ class GroupEditor extends StatelessWidget {
           subtitle: group.amounts.containsKey(group.workers[i].id)
               ? 'share_set_by_hand'.tr()
               : ownRateLine(group.workers[i]),
-          value: shares[i] == null ? '—' : Formatters.formatCurrency(shares[i]!),
+          value: amountText(shares[i]),
           valueColor: group.amounts.containsKey(group.workers[i].id) ? colors.warning : null,
+          // The bricks this worker carried, typed in beside their pay.
+          trailing: group.asksBricks
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _BricksField(
+                      value: group.bricks[group.workers[i].id],
+                      onChanged: (value) {
+                        if (value == null) {
+                          group.bricks.remove(group.workers[i].id);
+                        } else {
+                          group.bricks[group.workers[i].id] = value;
+                        }
+                        onChanged();
+                      },
+                    ),
+                    SizedBox(
+                      width: 76,
+                      child: Text(
+                        amountText(shares[i]),
+                        textAlign: TextAlign.end,
+                        style: context.text.titleSmall?.copyWith(
+                          color: group.amounts.containsKey(group.workers[i].id) ? colors.warning : null,
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              : null,
         ),
       GroupedRow(
         onTap: () {
@@ -412,6 +487,7 @@ class GroupEditor extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         card,
+        if (group.asksBricks) _BricksTotal(given: group.bricksGiven(), total: bricks),
         if (!group.fits(total))
           Padding(
             padding: const EdgeInsets.only(top: AppTheme.spaceXs, left: AppTheme.spaceXs),
@@ -449,6 +525,97 @@ class _TypeChip extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The bricks one worker carried, typed in on their row.
+class _BricksField extends StatefulWidget {
+  final int? value;
+  final ValueChanged<int?> onChanged;
+
+  const _BricksField({required this.value, required this.onChanged});
+
+  @override
+  State<_BricksField> createState() => _BricksFieldState();
+}
+
+class _BricksFieldState extends State<_BricksField> {
+  late final _controller = TextEditingController(text: widget.value?.toString() ?? '');
+
+  @override
+  void didUpdateWidget(_BricksField old) {
+    super.didUpdateWidget(old);
+    if (widget.value != int.tryParse(_controller.text)) _controller.text = widget.value?.toString() ?? '';
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return SizedBox(
+      width: 92,
+      child: TextField(
+        controller: _controller,
+        keyboardType: TextInputType.number,
+        inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(9)],
+        textAlign: TextAlign.end,
+        style: context.text.titleSmall,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'bricks_short'.tr(),
+          fillColor: colors.surfaceAlt,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        ),
+        onChanged: (text) => widget.onChanged(int.tryParse(text)),
+      ),
+    );
+  }
+}
+
+/// Under a group whose bricks are typed per worker: how many are typed in
+/// out of the bricks counted, in green once they match.
+class _BricksTotal extends StatelessWidget {
+  final int given;
+  final int total;
+
+  const _BricksTotal({required this.given, required this.total});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final matches = given == total && total > 0;
+    return Padding(
+      padding: const EdgeInsets.only(top: AppTheme.spaceXs, left: AppTheme.spaceXs, right: AppTheme.spaceXs),
+      child: Row(
+        children: [
+          Icon(
+            matches ? Icons.check_circle_rounded : Icons.info_rounded,
+            size: 16,
+            color: matches ? colors.success : colors.warning,
+          ),
+          const SizedBox(width: AppTheme.spaceXs),
+          Expanded(
+            child: Text(
+              matches
+                  ? 'bricks_given_match'.tr(namedArgs: {'total': Formatters.formatCount(total)})
+                  : (given > total ? 'bricks_given_over' : 'bricks_given_line').tr(
+                      namedArgs: {
+                        'given': Formatters.formatCount(given),
+                        'total': Formatters.formatCount(total),
+                        'left': Formatters.formatCount((total - given).abs()),
+                      },
+                    ),
+              style: context.text.bodySmall?.copyWith(color: matches ? colors.success : colors.warning),
+            ),
+          ),
+        ],
       ),
     );
   }

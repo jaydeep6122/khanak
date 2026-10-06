@@ -182,16 +182,26 @@ class GroupShare {
   final String name;
   final String? nickname;
 
-  /// The rate this worker was paid at, for work per 1000 bricks.
+  /// The bricks this worker carried and the rate they were paid at, for work
+  /// at each worker's own rate.
+  final double? quantity;
   final double? rate;
   final double amount;
 
-  const GroupShare({required this.workerId, required this.name, this.nickname, this.rate, required this.amount});
+  const GroupShare({
+    required this.workerId,
+    required this.name,
+    this.nickname,
+    this.quantity,
+    this.rate,
+    required this.amount,
+  });
 
   factory GroupShare.fromJson(Map<String, dynamic> json) => GroupShare(
     workerId: json['worker_id'] as String,
     name: asString(json['name']),
     nickname: json['nickname'] as String?,
+    quantity: asDoubleOrNull(json['quantity']),
     rate: asDoubleOrNull(json['rate']),
     amount: asDouble(json['amount']),
   );

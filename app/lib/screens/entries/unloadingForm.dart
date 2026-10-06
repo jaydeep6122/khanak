@@ -122,6 +122,9 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
     setState(() {});
     final total = group.total(bricks: _bricks, rate: keptOrCurrentRate(_savedRate, group.type));
     if (!group.fits(total)) return showErrorToast('shares_too_much'.tr());
+    // Each worker's bricks must add up to the bricks taken out.
+    final bricksProblem = group.bricksProblem(_bricks);
+    if (bricksProblem != null) return showErrorToast(bricksProblem);
 
     final module = context.read<Core>().entry;
     setState(() => _busy = true);

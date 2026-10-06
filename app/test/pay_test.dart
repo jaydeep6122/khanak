@@ -67,17 +67,44 @@ void main() {
     expect(splitEqually(0.05, 3), [0.02, 0.02, 0.01]);
   });
 
-  test('own rates: the bricks are shared, each worker paid at their own rate', () {
+  test('own rates: each worker paid for the bricks they carried, at their own rate', () {
     final group = GroupDraft(type: loading, workers: [worker('a', 100), worker('b', 120)]);
-    expect(group.pay(bricks: 22000), [1100, 1320]);
-    expect(group.total(bricks: 22000, rate: null), 2420);
+    expect(group.asksBricks, isTrue);
+    expect(group.pay(bricks: 22000), [null, null]);
+    group.bricks
+      ..['a'] = 15000
+      ..['b'] = 7000;
+    expect(group.pay(bricks: 22000), [1500, 840]);
+    expect(group.total(bricks: 22000, rate: null), 2340);
+    expect(group.bricksProblem(22000), isNull);
     expect(group.toJson(bricks: 22000), {
       'work_type_id': 'loading',
       'workers': [
-        {'worker_id': 'a'},
-        {'worker_id': 'b'},
+        {'worker_id': 'a', 'bricks': 15000},
+        {'worker_id': 'b', 'bricks': 7000},
       ],
     });
+  });
+
+  test("own rates: the workers' bricks must add up to the bricks counted", () {
+    final group = GroupDraft(type: loading, workers: [worker('a', 100), worker('b', 100)]);
+    group.bricks['a'] = 6000;
+    expect(group.bricksProblem(10000), 'bricks_of_worker_missing');
+    group.bricks['b'] = 3000;
+    expect(group.bricksGiven(), 9000);
+    expect(group.bricksProblem(10000), 'bricks_do_not_add_up');
+    group.bricks['b'] = 4000;
+    expect(group.bricksProblem(10000), isNull);
+  });
+
+  test('own rates: a lone worker carried all the bricks', () {
+    final group = GroupDraft(type: loading, workers: [worker('a', 100)]);
+    expect(group.asksBricks, isFalse);
+    expect(group.pay(bricks: 10000), [1000]);
+    expect(group.bricksProblem(10000), isNull);
+    expect(group.toJson(bricks: 10000)['workers'], [
+      {'worker_id': 'a'},
+    ]);
   });
 
   test('own rates: an edited entry keeps the rate it was made with', () {
@@ -87,12 +114,18 @@ void main() {
 
   test('own rates: a worker whose rate is not known has no pay', () {
     final group = GroupDraft(type: loading, workers: [worker('a', 100), worker('b')]);
+    group.bricks
+      ..['a'] = 5000
+      ..['b'] = 5000;
     expect(group.pay(bricks: 10000), [500, null]);
     expect(group.total(bricks: 10000, rate: null), 500);
   });
 
   test('own rates: a share set by hand leaves the others as they are', () {
     final group = GroupDraft(type: loading, workers: [worker('a', 100), worker('b', 100)]);
+    group.bricks
+      ..['a'] = 5000
+      ..['b'] = 5000;
     group.amounts['a'] = 700;
     expect(group.pay(bricks: 10000), [700, 500]);
     expect(group.fits(1200), isTrue);
@@ -100,8 +133,8 @@ void main() {
       'work_type_id': 'loading',
       'total_amount': '1200.00',
       'workers': [
-        {'worker_id': 'a', 'amount': '700.00'},
-        {'worker_id': 'b', 'amount': '500.00'},
+        {'worker_id': 'a', 'bricks': 5000, 'amount': '700.00'},
+        {'worker_id': 'b', 'bricks': 5000, 'amount': '500.00'},
       ],
     });
   });
