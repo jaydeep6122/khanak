@@ -73,10 +73,10 @@ export async function setRates(f) {
 }
 
 /** ₹`rate` per 1000 bricks. */
-export const per1000 = (rate) => ({ rate, rate_unit: "per_1000" });
+export const per1000 = (rate) => ({ brick_rate: rate });
 
 /** ₹`rate` per day. */
-export const perDay = (rate) => ({ rate, rate_unit: "per_day" });
+export const perDay = (rate) => ({ day_rate: rate });
 
 /**
  * A worker; main_work is 'other' unless given. Everyone but a driver needs a

@@ -31,8 +31,7 @@ void main() {
     isGroup: true,
     isActive: true,
   );
-  Worker worker(String id, [double? rate]) =>
-      Worker(id: id, name: id, isActive: true, rate: rate, rateUnit: rate == null ? null : PayUnit.per1000);
+  Worker worker(String id, [double? rate]) => Worker(id: id, name: id, isActive: true, brickRate: rate);
 
   test('rates per 1000, per lakh, per day and per trip', () {
     expect(loading.payFor(22000), isNull);

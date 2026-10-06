@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:khanak/components/appTextField.dart';
 import 'package:khanak/components/formBits.dart';
 import 'package:khanak/components/groupedSection.dart';
+import 'package:khanak/components/optionSheet.dart';
 import 'package:khanak/components/saveBar.dart';
-import 'package:khanak/components/segmentedControl.dart';
 import 'package:khanak/components/tint.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/global/constants.dart';
@@ -40,26 +40,42 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
   late final _nameController = TextEditingController(text: widget.worker?.name ?? widget.initialName);
   late final _phoneController = TextEditingController(text: widget.worker?.phone);
   late final _noteController = TextEditingController(text: widget.worker?.note);
-  late final _rateController = TextEditingController(
-    text: widget.worker?.rate == null ? '' : Formatters.formatDouble(widget.worker!.rate!),
+  late final _brickRateController = TextEditingController(
+    text: widget.worker?.brickRate == null ? '' : Formatters.formatDouble(widget.worker!.brickRate!),
+  );
+  late final _dayRateController = TextEditingController(
+    text: widget.worker?.dayRate == null ? '' : Formatters.formatDouble(widget.worker!.dayRate!),
   );
   late final _salaryController = TextEditingController(
     text: widget.worker?.monthlySalary == null ? '' : Formatters.formatDouble(widget.worker!.monthlySalary!),
   );
   late MainWork? _mainWork = widget.worker?.mainWork ?? widget.initialMainWork;
 
-  /// Per 1000 bricks or per day. Follows the main work (per day for roj)
-  /// until picked by hand.
-  late PayUnit _rateUnit = widget.worker?.rateUnit ?? _defaultUnit(_mainWork);
-  late bool _rateUnitPicked = widget.worker?.rateUnit != null;
   late DateTime _salaryFrom = widget.worker?.salaryFrom ?? DateTime.now();
   bool _busy = false;
 
-  static PayUnit _defaultUnit(MainWork? work) => work == MainWork.daily ? PayUnit.perDay : PayUnit.per1000;
+  /// Set once save was tapped, so a missing main work shows in red.
+  bool _tried = false;
+
+  /// Either rate may be left empty, but not both. [checkBoth] puts the
+  /// "give at least one" message on one field only.
+  String? _rateProblem(String? value, String label, {bool checkBoth = true}) {
+    if (checkBoth && _text(_brickRateController) == null && _text(_dayRateController) == null) {
+      return 'own_rate_one_needed'.tr();
+    }
+    return Validators.amount(value, fieldLabel: label, isRequired: false, allowZero: false);
+  }
 
   @override
   void dispose() {
-    for (final controller in [_nameController, _phoneController, _noteController, _rateController, _salaryController]) {
+    for (final controller in [
+      _nameController,
+      _phoneController,
+      _noteController,
+      _brickRateController,
+      _dayRateController,
+      _salaryController,
+    ]) {
       controller.dispose();
     }
     super.dispose();
@@ -72,6 +88,7 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
+    setState(() => _tried = true);
     final valid = _formKey.currentState!.validate();
     if (_mainWork == null) return showErrorToast('pick_main_work_first'.tr());
     if (!valid) return;
@@ -83,8 +100,8 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
     final saved = await module.saveWorker({
       'name': _nameController.text.trim(),
       'main_work': work.value,
-      'rate': driver ? null : apiAmount(_rateController.text),
-      'rate_unit': driver ? null : _rateUnit.value,
+      'brick_rate': driver ? null : apiAmount(_brickRateController.text),
+      'day_rate': driver ? null : apiAmount(_dayRateController.text),
       'phone': _text(_phoneController),
       'note': _text(_noteController),
       'monthly_salary': driver ? apiAmount(_salaryController.text) : null,
@@ -95,6 +112,43 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
     if (saved == null) return showErrorToast(module.error ?? 'error_generic'.tr());
     showSuccessToast('saved'.tr());
     Navigator.of(context).pop(saved);
+  }
+
+  static IconData _icon(MainWork work) => switch (work) {
+    MainWork.molder => Icons.grid_view_rounded,
+    MainWork.loader => Icons.layers_rounded,
+    MainWork.stacker => Icons.view_agenda_rounded,
+    MainWork.unloader => Icons.local_fire_department_rounded,
+    MainWork.driver => Icons.local_shipping_rounded,
+    MainWork.daily => Icons.wb_sunny_rounded,
+    MainWork.other => Icons.more_horiz_rounded,
+  };
+
+  static Tint _tint(MainWork work) => switch (work) {
+    MainWork.molder || MainWork.loader || MainWork.stacker => Tint.bricks,
+    MainWork.unloader => Tint.fire,
+    MainWork.driver => Tint.truck,
+    MainWork.daily => Tint.money,
+    MainWork.other => Tint.work,
+  };
+
+  Future<void> _pickMainWork() async {
+    FocusScope.of(context).unfocus();
+    final work = await pickOption<MainWork>(
+      context,
+      title: 'main_work'.tr(),
+      // Roj is no longer a kind of worker; one saved as roj before still
+      // shows it.
+      options: [
+        for (final w in MainWork.values)
+          if (w != MainWork.daily || widget.worker?.mainWork == MainWork.daily) w,
+      ],
+      label: (w) => w.displayName,
+      isSelected: (w) => w == _mainWork,
+      leading: (w) => TintIcon(tint: _tint(w), icon: _icon(w)),
+    );
+    if (work == null || !mounted) return;
+    setState(() => _mainWork = work);
   }
 
   @override
@@ -124,64 +178,43 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
               validator: (v) => Validators.required(v, 'worker_name'.tr()),
             ),
             const SizedBox(height: AppTheme.spaceLg),
-            GroupCaption('main_work'.tr()),
-            ChoiceGrid<MainWork>(
-              // Roj is no longer a kind of worker; one saved as roj before
-              // still shows it.
-              options: [
-                for (final w in MainWork.values)
-                  if (w != MainWork.daily || widget.worker?.mainWork == MainWork.daily) w,
+            GroupedSection(
+              caption: 'main_work'.tr(),
+              children: [
+                GroupedRow(
+                  leading: work == null
+                      ? const TintIcon(tint: Tint.neutral, icon: Icons.work_outline_rounded)
+                      : TintIcon(tint: _tint(work), icon: _icon(work)),
+                  title: work?.displayName ?? 'main_work_help'.tr(),
+                  placeholder: work == null && !_tried,
+                  titleColor: work == null && _tried ? context.colors.danger : null,
+                  onTap: _pickMainWork,
+                ),
               ],
-              selected: work,
-              label: (w) => w.displayName,
-              icon: (w) => switch (w) {
-                MainWork.molder => Icons.grid_view_rounded,
-                MainWork.loader => Icons.layers_rounded,
-                MainWork.stacker => Icons.view_agenda_rounded,
-                MainWork.unloader => Icons.local_fire_department_rounded,
-                MainWork.driver => Icons.local_shipping_rounded,
-                MainWork.daily => Icons.wb_sunny_rounded,
-                MainWork.other => Icons.more_horiz_rounded,
-              },
-              iconColor: (context, w) => switch (w) {
-                MainWork.molder || MainWork.loader || MainWork.stacker => Tint.bricks.color(context),
-                MainWork.unloader => Tint.fire.color(context),
-                MainWork.driver => Tint.truck.color(context),
-                MainWork.daily => Tint.money.color(context),
-                MainWork.other => Tint.work.color(context),
-              },
-              onSelected: (w) => setState(() {
-                _mainWork = w;
-                if (!_rateUnitPicked) _rateUnit = _defaultUnit(w);
-              }),
             ),
-            if (work == null)
-              Padding(
-                padding: const EdgeInsets.only(top: AppTheme.spaceXs, left: AppTheme.spaceXs),
-                child: Text('main_work_help'.tr(), style: context.text.bodySmall),
-              ),
             if (work != null && !work.hasSalary) ...[
               const SizedBox(height: AppTheme.spaceLg),
               GroupCaption('own_rate'.tr()),
-              SegmentedControl<PayUnit>(
-                options: const [PayUnit.per1000, PayUnit.perDay],
-                selected: _rateUnit,
-                label: (unit) => 'own_rate_${unit.value}'.tr(),
-                onChanged: (unit) => setState(() {
-                  _rateUnit = unit;
-                  _rateUnitPicked = true;
-                }),
-              ),
-              const SizedBox(height: AppTheme.spaceSm),
               AppTextField(
-                controller: _rateController,
-                labelText: 'rate'.tr(),
-                helperText: _rateUnit == PayUnit.per1000 ? 'own_rate_per_1000_help'.tr() : 'own_rate_per_day_help'.tr(),
+                controller: _brickRateController,
+                labelText: 'own_rate_per_1000'.tr(),
+                helperText: 'own_rate_per_1000_help'.tr(),
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 inputFormatters: [DecimalInputFormatter(decimals: 2)],
                 prefixText: '₹ ',
-                suffixText: 'rate_unit_${_rateUnit.value}'.tr(),
-                validator: (v) => Validators.amount(v, fieldLabel: 'rate'.tr(), allowZero: false),
+                suffixText: 'rate_unit_per_1000'.tr(),
+                validator: (v) => _rateProblem(v, 'own_rate_per_1000'.tr()),
+              ),
+              const SizedBox(height: AppTheme.spaceLg),
+              AppTextField(
+                controller: _dayRateController,
+                labelText: 'own_rate_per_day'.tr(),
+                helperText: 'own_rate_per_day_help'.tr(),
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [DecimalInputFormatter(decimals: 2)],
+                prefixText: '₹ ',
+                suffixText: 'rate_unit_per_day'.tr(),
+                validator: (v) => _rateProblem(v, 'own_rate_per_day'.tr(), checkBoth: false),
               ),
             ],
             if (work != null && work.hasSalary) ...[

@@ -4,16 +4,14 @@ import { date, id, listQuery, money, optionalText, phone, queryBoolean, text } f
 // paatla, bharai, khadkaniyo, nikasi, driver, roj, other.
 export const MAIN_WORKS = ["molder", "loader", "stacker", "unloader", "driver", "daily", "other"];
 
-/** How a worker's own rate is counted: per 1000 bricks, or per day. */
-export const RATE_UNITS = ["per_1000", "per_day"];
-
 const workerFields = {
   name: text(255),
   main_work: z.enum(MAIN_WORKS),
-  // Every worker but a driver is paid at a rate of their own: per 1000
-  // bricks for their share of the bricks, or per day. Both or neither.
-  rate: money({ gt: 0 }).nullable().optional(),
-  rate_unit: z.enum(RATE_UNITS).nullable().optional(),
+  // Every worker but a driver has a rate of their own, and may have both:
+  // per 1000 bricks for their share of brick work, and per day for their
+  // days typed in as day work. The two need not match.
+  brick_rate: money({ gt: 0 }).nullable().optional(),
+  day_rate: money({ gt: 0 }).nullable().optional(),
   nickname: optionalText(100),
   village: optionalText(100),
   phone: phone.nullable().optional(),
@@ -28,19 +26,29 @@ const salaryPair = (worker) =>
 
 /**
  * What is wrong with how this worker is paid, or null. A driver is paid a
- * monthly salary; everyone else at a rate of their own, per 1000 bricks or
- * per day, set when they are added.
+ * monthly salary; everyone else at a rate of their own, per 1000 bricks, per
+ * day or both, set when they are added.
  */
 export function ownPayProblem(worker) {
   if (worker.main_work === "driver") {
     if (worker.monthly_salary == null) return { path: "monthly_salary", message: "Give the driver's monthly salary" };
-    if (worker.rate != null) return { path: "rate", message: "A driver is paid a monthly salary, not a rate" };
+    if (worker.brick_rate != null || worker.day_rate != null) {
+      return { path: "brick_rate", message: "A driver is paid a monthly salary, not a rate" };
+    }
     return null;
   }
-  if (worker.rate == null) return { path: "rate", message: "Give this worker's rate per 1000 bricks or per day" };
-  if (worker.rate_unit == null) return { path: "rate_unit", message: "Is the rate per 1000 bricks or per day?" };
+  if (worker.brick_rate == null && worker.day_rate == null) {
+    return { path: "brick_rate", message: "Give this worker's rate per 1000 bricks, per day, or both" };
+  }
   return null;
 }
+
+/**
+ * Paid only by the day (a day rate, no rate per 1000 bricks): never in a
+ * group's pay, and a molder earns nothing from counts. Their days are typed
+ * in as day work.
+ */
+export const paidOnlyByDay = (worker) => worker?.brick_rate == null && worker?.day_rate != null;
 
 export const createWorkerSchema = z
   .object(workerFields)

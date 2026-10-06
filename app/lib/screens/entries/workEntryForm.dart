@@ -102,7 +102,7 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
     if (type == null) return null;
     final worker = _worker;
     if (type.atOwnRate) return worker?.brickRate;
-    if (type.payUnit == PayUnit.perDay && worker?.paidByDay == true) return worker!.rate;
+    if (type.payUnit == PayUnit.perDay && worker?.dayRate != null) return worker!.dayRate;
     return type.rate;
   }
 

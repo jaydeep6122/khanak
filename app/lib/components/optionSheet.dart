@@ -4,7 +4,7 @@ import 'package:khanak/components/tint.dart';
 import 'package:khanak/global/themes.dart';
 
 /// A sheet listing a few choices (a kiln, a truck), the current one ticked.
-/// Null when dismissed.
+/// Each shows [tint]'s icon, or its own [leading]. Null when dismissed.
 Future<T?> pickOption<T>(
   BuildContext context, {
   required String title,
@@ -12,6 +12,7 @@ Future<T?> pickOption<T>(
   required String Function(T) label,
   bool Function(T)? isSelected,
   Tint tint = Tint.neutral,
+  Widget Function(T)? leading,
   String? empty,
 }) {
   return showModalBottomSheet<T>(
@@ -42,7 +43,7 @@ Future<T?> pickOption<T>(
                   children: [
                     for (final option in options)
                       GroupedRow(
-                        leading: TintIcon(tint: tint),
+                        leading: leading?.call(option) ?? TintIcon(tint: tint),
                         title: label(option),
                         chevron: false,
                         trailing: isSelected?.call(option) == true
