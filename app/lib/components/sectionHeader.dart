@@ -20,16 +20,13 @@ class SectionHeader extends StatelessWidget {
     return Padding(
       padding: padding,
       child: SizedBox(
-        height: 40,
+        height: 44,
         child: Row(
           children: [
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(left: AppTheme.spaceXs),
-                child: Text(
-                  title,
-                  style: context.text.titleSmall?.copyWith(fontWeight: FontWeight.w700),
-                ),
+                child: Text(title, style: context.text.labelMedium),
               ),
             ),
             if (actionLabel != null)
@@ -39,7 +36,7 @@ class SectionHeader extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(horizontal: AppTheme.spaceSm),
                   minimumSize: const Size(0, 36),
                 ),
-                child: Text(actionLabel!),
+                child: Text(actionLabel!, style: const TextStyle(fontSize: 14)),
               ),
           ],
         ),

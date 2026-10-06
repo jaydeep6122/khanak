@@ -6,6 +6,7 @@ import 'package:khanak/helpers/json.dart';
 // not renamed one, the app shows its own translation instead.
 const _builtInNames = {
   'molding': 'Brick making',
+  'drying_carry': 'Carrying to drying',
   'kiln_loading': 'Kiln loading',
   'stacking': 'Kiln stacking and firing',
   'unloading': 'Kiln unloading',
@@ -24,7 +25,7 @@ String workTypeLabel(String? code, String name) =>
 class WorkType {
   final String id;
 
-  /// Built-in kinds: molding, kiln_loading, stacking, unloading,
+  /// Built-in kinds: molding, drying_carry, kiln_loading, stacking, unloading,
   /// truck_loading, daily, salary, lumpsum. Null for the owner's own.
   final String? code;
   final String name;

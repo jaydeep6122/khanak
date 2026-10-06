@@ -29,8 +29,7 @@ enum AppLanguage {
   /// Always written in the language itself, so anyone can find their own.
   final String nativeName;
 
-  static AppLanguage? byCode(String? code) =>
-      AppLanguage.values.where((language) => language.code == code).firstOrNull;
+  static AppLanguage? byCode(String? code) => AppLanguage.values.where((language) => language.code == code).firstOrNull;
 }
 
 /// owner > munim > supervisor.
@@ -43,10 +42,8 @@ enum MemberRole {
   final String value;
   final int rank;
 
-  static MemberRole fromString(String? value) => MemberRole.values.firstWhere(
-    (e) => e.value == value,
-    orElse: () => supervisor,
-  );
+  static MemberRole fromString(String? value) =>
+      MemberRole.values.firstWhere((e) => e.value == value, orElse: () => supervisor);
 
   String get displayName => 'role_$value'.tr();
 
@@ -61,18 +58,19 @@ enum PeriodKind {
   const PeriodKind(this.value);
   final String value;
 
-  static PeriodKind fromString(String? value) => PeriodKind.values.firstWhere(
-    (e) => e.value == value,
-    orElse: () => season,
-  );
+  static PeriodKind fromString(String? value) =>
+      PeriodKind.values.firstWhere((e) => e.value == value, orElse: () => season);
 
   String get displayName => 'period_$value'.tr();
 }
 
-/// Why bricks were counted.
+/// Why bricks were counted: where they were carried, and how.
 enum CountReason {
-  /// The drying ground is full, or the bricks are lifted from it.
-  drying('drying'),
+  /// Workers carried them to the drying ground.
+  dryingByWorkers('drying_by_workers'),
+
+  /// The truck carried them to the drying ground.
+  dryingByTruck('drying_by_truck'),
 
   /// Workers carried them into the kiln.
   kilnByWorkers('kiln_by_workers'),
@@ -80,20 +78,44 @@ enum CountReason {
   /// The truck carried them into the kiln.
   kilnByTruck('kiln_by_truck'),
 
-  /// The season's last count, when the workers leave.
+  /// The season's last count, when the workers leave. Nothing is carried.
   finalCount('final');
 
   const CountReason(this.value);
   final String value;
 
-  static CountReason fromString(String? value) => CountReason.values.firstWhere(
-    (e) => e.value == value,
-    orElse: () => drying,
-  );
+  static CountReason fromString(String? value) =>
+      CountReason.values.firstWhere((e) => e.value == value, orElse: () => dryingByWorkers);
+
+  /// The reason for bricks carried to [place] by truck or not.
+  static CountReason of(CountPlace place, {required bool byTruck}) => switch (place) {
+    CountPlace.drying => byTruck ? dryingByTruck : dryingByWorkers,
+    CountPlace.kiln => byTruck ? kilnByTruck : kilnByWorkers,
+    CountPlace.last => finalCount,
+  };
 
   String get displayName => 'count_reason_$value'.tr();
 
-  bool get intoKiln => this == kilnByWorkers || this == kilnByTruck;
+  CountPlace get place => switch (this) {
+    dryingByWorkers || dryingByTruck => CountPlace.drying,
+    kilnByWorkers || kilnByTruck => CountPlace.kiln,
+    finalCount => CountPlace.last,
+  };
+
+  bool get intoKiln => place == CountPlace.kiln;
+  bool get byTruck => this == dryingByTruck || this == kilnByTruck;
+
+  /// Someone carried the bricks and is paid for it: all but the last count.
+  bool get carried => this != finalCount;
+}
+
+/// Where counted bricks went.
+enum CountPlace {
+  drying,
+  kiln,
+  last;
+
+  String get displayName => 'count_place_$name'.tr();
 }
 
 /// How a kind of work is paid.
@@ -108,8 +130,7 @@ enum PayUnit {
   const PayUnit(this.value);
   final String value;
 
-  static PayUnit fromString(String? value) =>
-      PayUnit.values.firstWhere((e) => e.value == value, orElse: () => lumpsum);
+  static PayUnit fromString(String? value) => PayUnit.values.firstWhere((e) => e.value == value, orElse: () => lumpsum);
 
   String get displayName => 'pay_unit_$value'.tr();
 
@@ -136,8 +157,7 @@ enum TxnKind {
   const TxnKind(this.value);
   final String value;
 
-  static TxnKind fromString(String? value) =>
-      TxnKind.values.firstWhere((e) => e.value == value, orElse: () => advance);
+  static TxnKind fromString(String? value) => TxnKind.values.firstWhere((e) => e.value == value, orElse: () => advance);
 
   String get displayName => 'txn_$value'.tr();
 
@@ -159,12 +179,21 @@ enum MainWork {
   const MainWork(this.value);
   final String value;
 
-  static MainWork fromString(String? value) =>
-      MainWork.values.firstWhere((e) => e.value == value, orElse: () => other);
+  static MainWork fromString(String? value) => MainWork.values.firstWhere((e) => e.value == value, orElse: () => other);
 
   String get displayName => 'main_work_$value'.tr();
 
   /// A molder (per 1000 bricks) and a day worker (per day) each have their
   /// own rate, and must have one.
   bool get hasOwnRate => this == molder || this == daily;
+
+  /// Group work this worker is paid for at the group's rate. Its rate is
+  /// asked when such a worker is added, the first time (as on the server).
+  /// Loading a vehicle is asked at the first sale instead.
+  List<String> get groupWork => switch (this) {
+    loader => const ['drying_carry', 'kiln_loading'],
+    stacker => const ['stacking'],
+    unloader => const ['unloading'],
+    _ => const [],
+  };
 }

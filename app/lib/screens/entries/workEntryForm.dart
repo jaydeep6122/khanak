@@ -1,12 +1,13 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:khanak/components/appButton.dart';
-import 'package:khanak/components/appCard.dart';
 import 'package:khanak/components/appTextField.dart';
-import 'package:khanak/components/brickMark.dart';
+import 'package:khanak/components/initialBadge.dart';
 import 'package:khanak/components/confirmationDialog.dart';
 import 'package:khanak/components/formBits.dart';
+import 'package:khanak/components/groupedSection.dart';
+import 'package:khanak/components/rateDialog.dart';
+import 'package:khanak/components/saveBar.dart';
 import 'package:khanak/components/workerPicker.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/global/constants.dart';
@@ -54,6 +55,7 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
     super.initState();
     _worker = widget.worker;
     _quantityController.addListener(_rateChanged);
+    _amountController.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final core = context.read<Core>();
       await Future.wait([core.factory.fetchWorkTypes(), core.worker.fetchWorkers()]);
@@ -61,7 +63,8 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
       setState(() {
         final entry = widget.entry;
         if (entry != null) {
-          _worker = core.worker.byId(entry.workerId) ?? Worker(id: entry.workerId, name: entry.workerName, isActive: true);
+          _worker =
+              core.worker.byId(entry.workerId) ?? Worker(id: entry.workerId, name: entry.workerName, isActive: true);
           _type = core.factory.workTypes.value?.where((t) => t.id == entry.workTypeId).firstOrNull;
           // Typed by hand when it is not what its own rate gives.
           final type = _type;
@@ -101,6 +104,15 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
     return type.rate;
   }
 
+  /// The rate the server will price this entry at: an edited entry keeps the
+  /// rate it was made with while its worker and kind stay the same.
+  double? get _pricingRate {
+    final entry = widget.entry;
+    final kept = entry?.rate ?? 0;
+    if (entry != null && kept > 0 && entry.workTypeId == _type?.id && entry.workerId == _worker?.id) return kept;
+    return _rate;
+  }
+
   /// Keeps the amount in step with days × rate until it is typed by hand.
   void _rateChanged() {
     final type = _type;
@@ -121,15 +133,16 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
 
   List<WorkType> _choices(Core core) => (core.factory.workTypes.value ?? const [])
       .where((t) => t.isActive && t.payUnit != PayUnit.perMonth)
-      .where(
-        (t) =>
-            t.code == 'daily' ||
-            t.code == 'lumpsum' ||
-            t.code == 'stacking' ||
-            t.code == 'truck_loading' ||
-            t.code == null,
-      )
+      .where((t) => t.code == 'daily' || t.code == 'lumpsum' || t.code == 'truck_loading' || t.code == null)
       .toList();
+
+  /// Sets the rate of the kind of work picked, the first time it is used.
+  Future<void> _setRate() async {
+    final updated = await askRate(context, _type!);
+    if (updated == null || !mounted) return;
+    setState(() => _type = updated);
+    _rateChanged();
+  }
 
   Future<void> _pickWorker() async {
     final worker = await pickWorker(context, title: 'pick_worker'.tr());
@@ -142,6 +155,13 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
     FocusScope.of(context).unfocus();
     if (!_formKey.currentState!.validate()) return;
     if (_worker == null) return showErrorToast('pick_worker_first'.tr());
+    // Priced by a rate: it must have one, unless the amount was typed in.
+    if (_type!.payUnit.hasRate && !_amountByHand && (_pricingRate ?? 0) <= 0) {
+      final updated = await ensureRate(context, _type!);
+      if (updated == null || !mounted) return;
+      setState(() => _type = updated);
+      _rateChanged();
+    }
     final type = _type!;
     final module = context.read<Core>().entry;
 
@@ -185,7 +205,10 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
     final type = _type;
     final choices = _choices(core);
 
+    final amount = double.tryParse(_amountController.text) ?? 0;
+
     return Scaffold(
+      extendBody: true,
       appBar: AppBar(
         title: Text(widget.entry == null ? 'action_other_work'.tr() : 'edit_work'.tr()),
         actions: [
@@ -195,30 +218,46 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
               icon: Icon(Icons.delete_outline_rounded, color: colors.danger),
               onPressed: _cancel,
             ),
+          DatePill(value: _date, onChanged: (d) => setState(() => _date = d)),
         ],
       ),
+      bottomNavigationBar: type == null
+          ? null
+          : SaveBar(
+              label: 'save'.tr(),
+              trailing: amount > 0 ? Formatters.formatCurrency(amount) : null,
+              isLoading: _busy,
+              onPressed: _submit,
+            ),
       body: type == null
           ? const Center(child: CircularProgressIndicator())
           : Form(
               key: _formKey,
               child: ListView(
-                padding: const EdgeInsets.all(AppTheme.spaceLg),
+                padding: const EdgeInsets.fromLTRB(
+                  AppTheme.spaceXl,
+                  AppTheme.spaceSm,
+                  AppTheme.spaceXl,
+                  AppTheme.fabClearance,
+                ),
                 children: [
-                  FieldLabel('worker'.tr()),
-                  AppCard(
-                    onTap: _pickWorker,
-                    child: Row(
-                      children: [
-                        if (_worker != null) InitialBadge(letter: _worker!.initial) else Icon(Icons.person_search_rounded, color: colors.primary, size: 32),
-                        const SizedBox(width: AppTheme.spaceMd),
-                        Expanded(
-                          child: Text(
-                            _worker?.displayName ?? 'pick_worker'.tr(),
-                            style: context.text.titleMedium?.copyWith(color: _worker == null ? colors.primary : null),
-                          ),
-                        ),
-                      ],
-                    ),
+                  GroupedSection(
+                    children: [
+                      GroupedRow(
+                        onTap: _pickWorker,
+                        leading: _worker != null
+                            ? InitialBadge(letter: _worker!.initial, size: 36)
+                            : Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(color: colors.primarySoft, shape: BoxShape.circle),
+                                child: Icon(Icons.person_search_rounded, size: 19, color: colors.primary),
+                              ),
+                        label: 'worker'.tr(),
+                        title: _worker?.displayName ?? 'pick_worker'.tr(),
+                        titleColor: _worker == null ? colors.primary : null,
+                      ),
+                    ],
                   ),
                   const SizedBox(height: AppTheme.spaceLg),
                   FieldLabel('work_kind'.tr()),
@@ -241,17 +280,46 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
                       inputFormatters: [DecimalInputFormatter(decimals: 1)],
                       validator: (v) => Validators.quantity(v),
                     ),
-                    if (_rate != null)
+                    if ((_rate ?? 0) == 0)
                       Padding(
                         padding: const EdgeInsets.only(top: AppTheme.spaceXs, left: AppTheme.spaceXs),
-                        child: Text(
-                          'rate_line'.tr(
-                            namedArgs: {
-                              'rate': Formatters.formatCurrency(_rate!),
-                              'unit': 'pay_unit_${type.payUnit.value}'.tr(),
-                            },
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                canSetRates(context) ? 'rate_missing_line'.tr() : 'rate_ask_owner'.tr(),
+                                style: context.text.bodySmall?.copyWith(color: colors.warning),
+                              ),
+                            ),
+                            if (canSetRates(context)) TextButton(onPressed: _setRate, child: Text('set_rate'.tr())),
+                          ],
+                        ),
+                      )
+                    else
+                      // The owner or munim taps the rate to change it.
+                      InkWell(
+                        onTap: canSetRates(context) ? _setRate : null,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: AppTheme.spaceXs, left: AppTheme.spaceXs, bottom: 2),
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  'rate_line'.tr(
+                                    namedArgs: {
+                                      'rate': Formatters.formatCurrency(_rate!),
+                                      'unit': 'pay_unit_${type.payUnit.value}'.tr(),
+                                    },
+                                  ),
+                                  style: context.text.bodySmall,
+                                ),
+                              ),
+                              if (canSetRates(context)) ...[
+                                const SizedBox(width: AppTheme.spaceXs),
+                                Icon(Icons.edit_rounded, size: 13, color: colors.muted),
+                              ],
+                            ],
                           ),
-                          style: context.text.bodySmall,
                         ),
                       ),
                     const SizedBox(height: AppTheme.spaceLg),
@@ -267,16 +335,7 @@ class _WorkEntryFormScreenState extends State<WorkEntryFormScreen> {
                     validator: (v) => Validators.amount(v, fieldLabel: 'amount'.tr()),
                   ),
                   const SizedBox(height: AppTheme.spaceLg),
-                  DateField(label: 'date'.tr(), value: _date, onChanged: (d) => setState(() => _date = d)),
-                  const SizedBox(height: AppTheme.spaceLg),
-                  AppTextField(
-                    controller: _noteController,
-                    labelText: 'note_optional'.tr(),
-                    hintText: 'work_note_hint'.tr(),
-                    textCapitalization: TextCapitalization.sentences,
-                  ),
-                  const SizedBox(height: AppTheme.space2xl),
-                  AppButton(text: 'save'.tr(), isLoading: _busy, onPressed: _submit),
+                  NoteCard(controller: _noteController, hint: 'work_note_hint'.tr()),
                 ],
               ),
             ),

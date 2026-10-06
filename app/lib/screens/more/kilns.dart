@@ -89,7 +89,7 @@ class _KilnsScreenState extends State<KilnsScreen> {
                                 Text(kiln.name, style: context.text.titleMedium),
                                 if (stock[kiln.name] != null)
                                   Text(
-                                    'kiln_holds'.tr(namedArgs: {'bricks': Formatters.formatNumber(stock[kiln.name]!.toDouble())}),
+                                    'kiln_holds'.tr(namedArgs: {'bricks': Formatters.formatCount(stock[kiln.name]!)}),
                                     style: context.text.bodySmall,
                                   ),
                               ],

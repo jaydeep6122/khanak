@@ -3,14 +3,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:khanak/components/appCard.dart';
-import 'package:khanak/components/balanceText.dart';
-import 'package:khanak/components/brickMark.dart';
+import 'package:khanak/components/initialBadge.dart';
 import 'package:khanak/components/confirmationDialog.dart';
 import 'package:khanak/components/errorWidget.dart';
+import 'package:khanak/components/groupedSection.dart';
 import 'package:khanak/components/loadStateBody.dart';
 import 'package:khanak/components/loadingIndicator.dart';
-import 'package:khanak/components/sectionHeader.dart';
+import 'package:khanak/components/pageHeader.dart';
+import 'package:khanak/components/segmentedControl.dart';
+import 'package:khanak/components/tint.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/core/components/getters.dart';
 import 'package:khanak/core/modules/workerModule.dart';
@@ -41,7 +42,12 @@ class WorkerDetailScreen extends StatefulWidget {
   State<WorkerDetailScreen> createState() => _WorkerDetailScreenState();
 }
 
+/// Which lines of the account to show.
+enum _Filter { all, work, money }
+
 class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
+  _Filter _filter = _Filter.all;
+
   @override
   void initState() {
     super.initState();
@@ -80,6 +86,8 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
     switch (action) {
       case 'edit':
         await _push(WorkerFormScreen(worker: worker));
+      case 'other_work':
+        await _push(WorkEntryFormScreen(worker: worker));
       case 'recovery':
         await _push(TransactionFormScreen(worker: worker, kind: TxnKind.recovery));
       case 'writeoff':
@@ -175,209 +183,267 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
     final account = module.account(widget.workerId);
     scheduleReload(detail.needsReload || account.lines.needsReload, () => _load(refresh: true));
 
-    return LoadStateBody<Worker>(
-      state: detail,
-      onRetry: () => _load(refresh: true),
-      builder: (context, worker) {
-        final manager = core.can(MemberRole.munim);
-        final isOwner = core.can(MemberRole.owner);
-        final colors = context.colors;
+    return Scaffold(
+      appBar: AppBar(),
+      body: LoadStateBody<Worker>(
+        state: detail,
+        onRetry: () => _load(refresh: true),
+        builder: (context, worker) {
+          final manager = core.can(MemberRole.munim);
+          final isOwner = core.can(MemberRole.owner);
+          final colors = context.colors;
+          final lines = account.lines.items.where(
+            (line) => switch (_filter) {
+              _Filter.all => true,
+              _Filter.work => line.isWork,
+              _Filter.money => !line.isWork,
+            },
+          );
 
-        return Scaffold(
-          appBar: AppBar(
-            title: Text(worker.name),
-            actions: [
-              if (manager)
-                PopupMenuButton<String>(
-                  onSelected: (action) => _menu(action, worker),
-                  itemBuilder: (_) => [
-                    PopupMenuItem(value: 'edit', child: Text('worker_edit'.tr())),
-                    PopupMenuItem(value: 'recovery', child: Text('txn_recovery'.tr())),
-                    if (isOwner) PopupMenuItem(value: 'writeoff', child: Text('txn_writeoff'.tr())),
-                    PopupMenuItem(value: 'new_link', child: Text('new_link'.tr())),
-                    PopupMenuItem(
-                      value: worker.shareEnabled ? 'link_off' : 'link_on',
-                      child: Text(worker.shareEnabled ? 'link_off'.tr() : 'link_on'.tr()),
-                    ),
-                    PopupMenuItem(
-                      value: worker.isActive ? 'left' : 'returned',
-                      child: Text(worker.isActive ? 'mark_left'.tr() : 'mark_returned'.tr()),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-          body: RefreshIndicator(
+          return RefreshIndicator(
             onRefresh: () => _load(refresh: true),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(AppTheme.spaceLg, 0, AppTheme.spaceLg, AppTheme.space2xl),
+              padding: const EdgeInsets.fromLTRB(AppTheme.spaceXl, 0, AppTheme.spaceXl, AppTheme.space3xl),
               children: [
-                AppCard(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        children: [
-                          InitialBadge(letter: worker.initial, size: 52, muted: !worker.isActive),
-                          const SizedBox(width: AppTheme.spaceMd),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(worker.displayName, style: context.text.titleMedium),
-                                if (!worker.isActive && worker.leftOn != null)
-                                  Text(
-                                    'left_on'.tr(namedArgs: {'date': Formatters.formatDate(worker.leftOn!)}),
-                                    style: context.text.bodySmall?.copyWith(color: colors.warning),
-                                  ),
-                                Text(
-                                  [
-                                    worker.mainWork.displayName,
-                                    if (worker.rate != null)
-                                      'own_rate_line'.tr(namedArgs: {
-                                        'rate': Formatters.formatCurrency(worker.rate!),
-                                        'unit': worker.mainWork == MainWork.molder
-                                            ? 'pay_unit_per_1000'.tr()
-                                            : 'pay_unit_per_day'.tr(),
-                                      }),
-                                  ].join(' · '),
-                                  style: context.text.bodySmall,
-                                ),
-                                if (worker.isSalaried)
-                                  Text(
-                                    'salary_line'.tr(namedArgs: {'amount': Formatters.formatCurrency(worker.monthlySalary!)}),
-                                    style: context.text.bodySmall,
-                                  ),
-                              ],
-                            ),
-                          ),
-                          if (worker.phone != null)
-                            IconButton(
-                              tooltip: 'call'.tr(),
-                              icon: Icon(Icons.call_rounded, color: colors.primary),
-                              onPressed: () => launchUrl(Uri.parse('tel:${worker.phone}')),
-                            ),
-                        ],
-                      ),
-                      const Divider(height: AppTheme.space2xl),
-                      Row(
-                        children: [
-                          Expanded(child: Text('balance'.tr(), style: context.text.titleMedium)),
-                          BalanceText(balance: worker.balance ?? account.balance, large: true),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                if (manager) ...[
-                  const SizedBox(height: AppTheme.spaceMd),
-                  Row(
-                    children: [
-                      _QuickAction(
-                        icon: Icons.currency_rupee_rounded,
-                        label: 'action_advance'.tr(),
-                        onTap: () => _push(TransactionFormScreen(worker: worker, kind: TxnKind.advance)),
-                      ),
-                      _QuickAction(
-                        icon: Icons.task_alt_rounded,
-                        label: 'txn_settlement'.tr(),
-                        onTap: () => _push(TransactionFormScreen(worker: worker, kind: TxnKind.settlement)),
-                      ),
-                      _QuickAction(
-                        icon: Icons.handyman_rounded,
-                        label: 'action_other_work'.tr(),
-                        onTap: () => _push(WorkEntryFormScreen(worker: worker)),
-                      ),
-                      _QuickAction(
-                        icon: Icons.send_rounded,
-                        label: 'send_link'.tr(),
-                        onTap: () => _sendLink(worker),
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: AppTheme.spaceMd),
                 Row(
                   children: [
-                    Expanded(child: _Total(label: 'earned'.tr(), amount: account.totals.earned)),
-                    const SizedBox(width: AppTheme.spaceSm),
-                    Expanded(child: _Total(label: 'advances_given'.tr(), amount: account.totals.advances)),
-                    const SizedBox(width: AppTheme.spaceSm),
-                    Expanded(child: _Total(label: 'settled'.tr(), amount: account.totals.settled)),
+                    InitialBadge(letter: worker.initial, size: 60, muted: !worker.isActive),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(worker.name, style: context.text.headlineMedium),
+                          Text(
+                            [
+                              worker.mainWork.displayName,
+                              ?worker.village,
+                              if (worker.rate != null)
+                                '${Formatters.formatCurrency(worker.rate!)} / '
+                                    '${worker.mainWork == MainWork.molder ? '1000' : 'pay_unit_per_day'.tr()}',
+                              if (worker.isSalaried)
+                                'salary_line'.tr(
+                                  namedArgs: {'amount': Formatters.formatCurrency(worker.monthlySalary!)},
+                                ),
+                            ].join(' · '),
+                            style: context.text.bodyMedium?.copyWith(color: colors.muted, fontSize: 14),
+                          ),
+                          if (!worker.isActive && worker.leftOn != null)
+                            Text(
+                              'left_on'.tr(namedArgs: {'date': Formatters.formatDate(worker.leftOn!)}),
+                              style: context.text.bodySmall?.copyWith(color: colors.warning),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (worker.phone != null)
+                      CircleButton(
+                        icon: Icons.call_rounded,
+                        tooltip: 'call'.tr(),
+                        onTap: () => launchUrl(Uri.parse('tel:${worker.phone}')),
+                      ),
+                    if (manager)
+                      Padding(
+                        padding: const EdgeInsets.only(left: AppTheme.spaceSm),
+                        child: PopupMenuButton<String>(
+                          onSelected: (action) => _menu(action, worker),
+                          itemBuilder: (_) => [
+                            PopupMenuItem(value: 'edit', child: Text('worker_edit'.tr())),
+                            PopupMenuItem(value: 'other_work', child: Text('action_other_work'.tr())),
+                            PopupMenuItem(value: 'recovery', child: Text('txn_recovery'.tr())),
+                            if (isOwner) PopupMenuItem(value: 'writeoff', child: Text('txn_writeoff'.tr())),
+                            PopupMenuItem(value: 'new_link', child: Text('new_link'.tr())),
+                            PopupMenuItem(
+                              value: worker.shareEnabled ? 'link_off' : 'link_on',
+                              child: Text(worker.shareEnabled ? 'link_off'.tr() : 'link_on'.tr()),
+                            ),
+                            PopupMenuItem(
+                              value: worker.isActive ? 'left' : 'returned',
+                              child: Text(worker.isActive ? 'mark_left'.tr() : 'mark_returned'.tr()),
+                            ),
+                          ],
+                          child: const CircleButton(icon: Icons.more_horiz_rounded),
+                        ),
+                      ),
                   ],
                 ),
-                const SizedBox(height: AppTheme.spaceSm),
-                SectionHeader(title: 'account_lines'.tr()),
-                _Lines(account: account, worker: worker, onTap: (line) => _openLine(line, worker), onMore: () => module.fetchLedger(worker.id, more: true), onRetry: () => _load(refresh: true)),
+                const SizedBox(height: AppTheme.spaceXl),
+                _BalanceCard(
+                  balance: worker.balance ?? account.balance,
+                  account: account,
+                  actions: manager
+                      ? [
+                          _CardAction(
+                            label: 'advance'.tr(),
+                            background: colors.ink,
+                            foreground: colors.onInk,
+                            onTap: () => _push(TransactionFormScreen(worker: worker, kind: TxnKind.advance)),
+                          ),
+                          _CardAction(
+                            label: 'txn_settlement'.tr(),
+                            background: colors.background,
+                            foreground: colors.ink,
+                            onTap: () => _push(TransactionFormScreen(worker: worker, kind: TxnKind.settlement)),
+                          ),
+                          _CardAction(
+                            label: 'link'.tr(),
+                            icon: Icons.send_rounded,
+                            background: colors.successSoft,
+                            foreground: colors.success,
+                            onTap: () => _sendLink(worker),
+                          ),
+                        ]
+                      : const [],
+                ),
+                const SizedBox(height: AppTheme.spaceXl),
+                SegmentedControl<_Filter>(
+                  options: _Filter.values,
+                  selected: _filter,
+                  label: (f) => switch (f) {
+                    _Filter.all => 'all'.tr(),
+                    _Filter.work => 'filter_work'.tr(),
+                    _Filter.money => 'filter_money'.tr(),
+                  },
+                  onChanged: (f) => setState(() => _filter = f),
+                ),
+                const SizedBox(height: AppTheme.spaceLg),
+                _Lines(
+                  account: account,
+                  lines: lines.toList(),
+                  onTap: (line) => _openLine(line, worker),
+                  onMore: () => module.fetchLedger(worker.id, more: true),
+                  onRetry: () => _load(refresh: true),
+                ),
               ],
             ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _QuickAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _QuickAction({required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.spaceXs),
-        child: Material(
-          color: colors.primarySoft,
-          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppTheme.spaceMd, horizontal: AppTheme.spaceXs),
-              child: Column(
-                children: [
-                  Icon(icon, color: colors.primary, size: 26),
-                  const SizedBox(height: AppTheme.spaceXs),
-                  Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    style: context.text.labelMedium?.copyWith(color: colors.primary),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
 }
 
-class _Total extends StatelessWidget {
+class _CardAction {
   final String label;
-  final double amount;
+  final IconData? icon;
+  final Color background;
+  final Color foreground;
+  final VoidCallback onTap;
 
-  const _Total({required this.label, required this.amount});
+  const _CardAction({
+    required this.label,
+    this.icon,
+    required this.background,
+    required this.foreground,
+    required this.onTap,
+  });
+}
+
+/// What is left, large, with what was earned, given and settled below and
+/// the everyday buttons.
+class _BalanceCard extends StatelessWidget {
+  final double balance;
+  final WorkerAccount account;
+  final List<_CardAction> actions;
+
+  const _BalanceCard({required this.balance, required this.account, required this.actions});
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
-      padding: const EdgeInsets.all(AppTheme.spaceMd),
+    final colors = context.colors;
+    final (label, color) = balance > 0.004
+        ? ('to_pay'.tr(), colors.danger)
+        : balance < -0.004
+        ? ('to_get'.tr(), colors.success)
+        : ('settled_up'.tr(), colors.muted);
+
+    Widget total(String label, double amount) => Expanded(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: context.text.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: context.text.bodySmall?.copyWith(fontSize: 12),
+          ),
           FittedBox(
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
-            child: Text(Formatters.formatCurrency(amount), style: context.text.titleMedium),
+            child: Text(Formatters.formatCurrency(amount), style: context.text.titleSmall),
           ),
+        ],
+      ),
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(AppTheme.spaceXl),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: context.cardShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(label, style: context.text.bodySmall),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              Formatters.formatCurrency(balance.abs()),
+              style: context.text.displaySmall?.copyWith(fontSize: 40, color: color),
+            ),
+          ),
+          const SizedBox(height: AppTheme.spaceLg),
+          Row(
+            children: [
+              total('earned'.tr(), account.totals.earned),
+              const SizedBox(width: AppTheme.spaceSm),
+              total('advances_given'.tr(), account.totals.advances),
+              const SizedBox(width: AppTheme.spaceSm),
+              total('settled'.tr(), account.totals.settled),
+            ],
+          ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: AppTheme.spaceLg),
+            Row(
+              spacing: AppTheme.spaceSm,
+              children: [
+                for (final action in actions)
+                  Expanded(
+                    child: Material(
+                      color: action.background,
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                        onTap: action.onTap,
+                        child: SizedBox(
+                          height: 46,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (action.icon != null) ...[
+                                Icon(action.icon, size: 17, color: action.foreground),
+                                const SizedBox(width: 6),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  action.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: context.text.labelLarge?.copyWith(color: action.foreground, fontSize: 15),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -386,12 +452,18 @@ class _Total extends StatelessWidget {
 
 class _Lines extends StatelessWidget {
   final WorkerAccount account;
-  final Worker worker;
+  final List<LedgerLine> lines;
   final ValueChanged<LedgerLine> onTap;
   final VoidCallback onMore;
   final Future<void> Function() onRetry;
 
-  const _Lines({required this.account, required this.worker, required this.onTap, required this.onMore, required this.onRetry});
+  const _Lines({
+    required this.account,
+    required this.lines,
+    required this.onTap,
+    required this.onMore,
+    required this.onRetry,
+  });
 
   /// "22,000 × ₹550 / 1000", "6 days × ₹400", "share of ₹2,200 (2 workers)".
   String? _detail(LedgerLine line) {
@@ -402,7 +474,7 @@ class _Lines extends StatelessWidget {
       parts.add(
         'line_qty_rate'.tr(
           namedArgs: {
-            'quantity': Formatters.formatNumber(line.quantity!),
+            'quantity': Formatters.formatCount(line.quantity!),
             'rate': Formatters.formatCurrency(line.rate!),
             'unit': 'pay_unit_${unit.value}'.tr(),
           },
@@ -420,48 +492,66 @@ class _Lines extends StatelessWidget {
     return parts.isEmpty ? null : parts.join(' · ');
   }
 
+  Tint _tint(LedgerLine line) {
+    if (line.brickCountId != null) return Tint.bricks;
+    if (line.kilnUnloadingId != null) return Tint.fire;
+    if (line.source == 'sale') return Tint.truck;
+    if (line.isWork) return Tint.work;
+    return line.entryKind == 'advance' ? Tint.money : Tint.neutral;
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = account.lines;
     final colors = context.colors;
     if (state.isLoading && state.items.isEmpty) return const SizedBox(height: 200, child: LoadingIndicator());
     if (state.error != null && state.items.isEmpty) {
-      return SizedBox(height: 260, child: AppErrorWidget(errorMessage: state.error!, onRetry: onRetry));
+      return SizedBox(
+        height: 260,
+        child: AppErrorWidget(errorMessage: state.error!, onRetry: onRetry),
+      );
     }
-    if (state.items.isEmpty) {
+    if (lines.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(AppTheme.space2xl),
         child: Text('no_lines_yet'.tr(), textAlign: TextAlign.center, style: context.text.bodyMedium),
       );
     }
 
-    return AppCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          for (final line in state.items) ...[
-            ListTile(
-              onTap: () => onTap(line),
-              title: Text(line.title),
-              subtitle: Text(
-                [Formatters.formatDate(line.date), ?_detail(line)].join(' · '),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              trailing: Text(
-                '${line.amount >= 0 ? '+' : '−'}${Formatters.formatCurrency(line.amount.abs())}',
-                style: context.text.titleSmall?.copyWith(color: line.amount >= 0 ? colors.success : colors.danger),
-              ),
+    // One card per day, newest first, with the day above it.
+    final days = <DateTime, List<LedgerLine>>{};
+    for (final line in lines) {
+      days.putIfAbsent(DateTime(line.date.year, line.date.month, line.date.day), () => []).add(line);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final MapEntry(key: day, value: dayLines) in days.entries)
+          Padding(
+            padding: const EdgeInsets.only(bottom: AppTheme.spaceLg),
+            child: GroupedSection(
+              caption: Formatters.formatRelativeDate(day, today: 'today'.tr(), yesterday: 'yesterday'.tr()),
+              children: [
+                for (final line in dayLines)
+                  GroupedRow(
+                    onTap: () => onTap(line),
+                    chevron: false,
+                    leading: TintIcon(tint: _tint(line)),
+                    title: line.title,
+                    subtitle: _detail(line),
+                    value: '${line.amount >= 0 ? '+' : '−'}${Formatters.formatCurrency(line.amount.abs())}',
+                    valueColor: line.amount >= 0 ? colors.success : colors.danger,
+                  ),
+              ],
             ),
-            if (line != state.items.last) const Divider(indent: AppTheme.spaceLg),
-          ],
-          if (state.data.hasMore)
-            TextButton(
-              onPressed: state.isLoadingMore ? null : onMore,
-              child: Text(state.isLoadingMore ? 'loading'.tr() : 'load_more'.tr()),
-            ),
-        ],
-      ),
+          ),
+        if (state.data.hasMore)
+          TextButton(
+            onPressed: state.isLoadingMore ? null : onMore,
+            child: Text(state.isLoadingMore ? 'loading'.tr() : 'load_more'.tr()),
+          ),
+      ],
     );
   }
 }

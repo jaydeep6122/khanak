@@ -49,6 +49,12 @@ class Formatters {
     return formatCurrency(amount);
   }
 
+  static final NumberFormat _count = NumberFormat('#,##,##0.###', 'en_IN');
+
+  /// A count to read, grouped the Indian way: 245000 → "2,45,000". Not for
+  /// filling a text field; use [formatNumber] there.
+  static String formatCount(num value) => _count.format(value);
+
   /// Without trailing zeros: 250.5 → "250.5", 10.0 → "10".
   static String formatNumber(double value, {int maxDecimals = 3}) {
     var text = value.toStringAsFixed(maxDecimals);

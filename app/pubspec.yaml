@@ -22,6 +22,10 @@ dependencies:
   hive_flutter: ^1.1.0
   flutter_secure_storage: ^9.2.4
 
+  # Fonts: Geist for numbers and Latin text, Noto Sans Gujarati and Hindi
+  # behind it. Fetched once and kept on the phone.
+  google_fonts: ^8.1.0
+
   # Utilities
   intl: ^0.20.2               # Date/currency formatting
   another_flushbar: ^1.12.30  # Toast notifications

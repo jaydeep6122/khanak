@@ -1,16 +1,19 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:khanak/components/appButton.dart';
-import 'package:khanak/components/appTextField.dart';
+import 'package:khanak/components/bigNumberField.dart';
 import 'package:khanak/components/confirmationDialog.dart';
 import 'package:khanak/components/formBits.dart';
+import 'package:khanak/components/groupedSection.dart';
 import 'package:khanak/components/loadingIndicator.dart';
+import 'package:khanak/components/optionSheet.dart';
+import 'package:khanak/components/saveBar.dart';
+import 'package:khanak/components/tint.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/core/components/getters.dart';
 import 'package:khanak/global/constants.dart';
 import 'package:khanak/global/themes.dart';
+import 'package:khanak/helpers/formatters.dart';
 import 'package:khanak/helpers/json.dart';
 import 'package:khanak/helpers/toastNotifications.dart';
 import 'package:khanak/helpers/validators.dart';
@@ -41,6 +44,9 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
   Kiln? _kiln;
   GroupDraft? _group;
   double? _savedRate;
+
+  /// Set once save was tapped, so missing choices show in red.
+  bool _tried = false;
   bool _cancelled = false;
   bool _loading = true;
   bool _busy = false;
@@ -72,8 +78,11 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
       if (unloading != null) {
         _date = unloading.unloadedOn;
         _cancelled = unloading.isCancelled;
-        _kiln = core.factory.kilns.value?.where((k) => k.id == unloading.kilnId).firstOrNull ??
-            (unloading.kilnId == null ? null : Kiln(id: unloading.kilnId!, name: unloading.kilnName ?? '', isActive: true));
+        _kiln =
+            core.factory.kilns.value?.where((k) => k.id == unloading.kilnId).firstOrNull ??
+            (unloading.kilnId == null
+                ? null
+                : Kiln(id: unloading.kilnId!, name: unloading.kilnName ?? '', isActive: true));
         _quantityController.text = '${unloading.quantity}';
         _noteController.text = unloading.note ?? '';
         final group = unloading.groups.firstOrNull;
@@ -102,11 +111,14 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
+    setState(() => _tried = true);
     final valid = _formKey.currentState!.validate();
     if (_kiln == null) return showErrorToast('pick_kiln_first'.tr());
     if (!valid) return;
     final group = _group!;
-    final total = group.total(bricks: _bricks, rate: _savedRate ?? group.type.rate);
+    if (!await ensureGroupRate(context, group, keptOrCurrentRate(_savedRate, group.type)) || !mounted) return;
+    setState(() {});
+    final total = group.total(bricks: _bricks, rate: keptOrCurrentRate(_savedRate, group.type));
     if (!group.fits(total)) return showErrorToast('shares_too_much'.tr());
 
     final module = context.read<Core>().entry;
@@ -124,6 +136,19 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
     showSuccessToast('unloading_saved'.tr());
     showStockWarnings(saved.warnings);
     Navigator.of(context).pop(true);
+  }
+
+  Future<void> _pickKiln(List<Kiln> kilns) async {
+    final kiln = await pickOption<Kiln>(
+      context,
+      title: 'from_which_kiln'.tr(),
+      options: kilns,
+      label: (k) => k.name,
+      isSelected: (k) => k.id == _kiln?.id,
+      tint: Tint.fire,
+      empty: 'no_kilns_yet'.tr(),
+    );
+    if (kiln != null) setState(() => _kiln = kiln);
   }
 
   Future<void> _cancel() async {
@@ -147,69 +172,81 @@ class _UnloadingFormScreenState extends State<UnloadingFormScreen> {
     final core = context.watch<Core>();
     final title = widget.unloadingId == null ? 'action_unloading'.tr() : 'edit_unloading'.tr();
     if (_loading || _group == null) {
-      return Scaffold(appBar: AppBar(title: Text(title)), body: const LoadingIndicator());
+      return Scaffold(
+        appBar: AppBar(title: Text(title)),
+        body: const LoadingIndicator(),
+      );
     }
 
+    final colors = context.colors;
+    final group = _group!;
+    final rate = keptOrCurrentRate(_savedRate, group.type);
+    final total = group.workers.isEmpty ? 0.0 : group.total(bricks: _bricks, rate: rate);
+    final kilns = _activeKilns(core);
+
     return Scaffold(
+      extendBody: true,
       appBar: AppBar(
         title: Text(title),
         actions: [
           if (widget.unloadingId != null && !_cancelled)
             IconButton(
               tooltip: 'cancel_entry'.tr(),
-              icon: Icon(Icons.delete_outline_rounded, color: context.colors.danger),
+              icon: Icon(Icons.delete_outline_rounded, color: colors.danger),
               onPressed: _cancel,
             ),
+          DatePill(value: _date, onChanged: (d) => setState(() => _date = d)),
         ],
+      ),
+      bottomNavigationBar: SaveBar(
+        label: 'save'.tr(),
+        trailing: total > 0 ? Formatters.formatCurrency(total) : null,
+        isLoading: _busy,
+        onPressed: _submit,
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(AppTheme.spaceLg),
+          padding: const EdgeInsets.fromLTRB(
+            AppTheme.spaceXl,
+            AppTheme.spaceLg,
+            AppTheme.spaceXl,
+            AppTheme.fabClearance,
+          ),
           children: [
-            DateField(label: 'date'.tr(), value: _date, onChanged: (d) => setState(() => _date = d)),
-            const SizedBox(height: AppTheme.spaceLg),
-            FieldLabel('from_which_kiln'.tr()),
-            if (_activeKilns(core).isEmpty)
-              Text('no_kilns_yet'.tr(), style: context.text.bodyMedium?.copyWith(color: context.colors.danger))
-            else
-              ChoiceRow<Kiln>(
-                options: _activeKilns(core),
-                selected: _activeKilns(core).where((k) => k.id == _kiln?.id).firstOrNull,
-                label: (k) => k.name,
-                icon: (_) => Icons.local_fire_department_rounded,
-                onSelected: (k) => setState(() => _kiln = k),
-              ),
-            const SizedBox(height: AppTheme.spaceLg),
-            AppTextField(
+            BigNumberField(
               controller: _quantityController,
-              labelText: 'bricks_taken_out'.tr(),
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              prefixIcon: Icons.local_fire_department_rounded,
+              label: 'bricks_taken_out'.tr(),
+              quickAdds: const [1000, 5000, 10000],
               validator: Validators.bricks,
+            ),
+            const SizedBox(height: AppTheme.space2xl),
+            GroupedSection(
+              children: [
+                GroupedRow(
+                  leading: TintIcon(tint: _kiln == null && _tried ? Tint.neutral : Tint.fire),
+                  label: 'kiln_short'.tr(),
+                  title: _kiln?.name ?? 'pick_kiln'.tr(),
+                  titleColor: _kiln == null ? (_tried ? colors.danger : colors.primary) : null,
+                  onTap: () => _pickKiln(kilns),
+                ),
+              ],
             ),
             const SizedBox(height: AppTheme.spaceLg),
             GroupEditor(
               title: 'unloaders'.tr(),
-              group: _group!,
+              group: group,
               role: MainWork.unloader,
               typeChoices: const [],
               bricks: _bricks,
               trips: null,
-              rate: _savedRate ?? _group!.type.rate,
+              rate: rate,
               canChangeAmounts: !core.isSupervisor,
+              missing: _tried && group.workers.isEmpty,
               onChanged: () => setState(() {}),
             ),
             const SizedBox(height: AppTheme.spaceLg),
-            AppTextField(
-              controller: _noteController,
-              labelText: 'note_optional'.tr(),
-              maxLines: 2,
-              textCapitalization: TextCapitalization.sentences,
-            ),
-            const SizedBox(height: AppTheme.space2xl),
-            AppButton(text: 'save'.tr(), isLoading: _busy, onPressed: _submit),
+            NoteCard(controller: _noteController, hint: 'note_optional'.tr()),
           ],
         ),
       ),

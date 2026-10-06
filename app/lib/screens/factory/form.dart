@@ -11,7 +11,7 @@ import 'package:khanak/helpers/navigation.dart';
 import 'package:khanak/helpers/toastNotifications.dart';
 import 'package:khanak/helpers/validators.dart';
 import 'package:khanak/screens/auth/sessionRouter.dart';
-import 'package:khanak/screens/settings/rates.dart';
+import 'package:khanak/screens/home/home.dart';
 import 'package:khanak/types/factory.dart';
 
 /// Sets up a kiln: its name and place, and whether a season is running.
@@ -85,8 +85,9 @@ class _FactoryFormScreenState extends State<FactoryFormScreen> {
     setState(() => _busy = false);
     if (created == null) return showErrorToast(factory.error ?? 'error_generic'.tr());
 
-    // Rates come next: nothing can be paid until they are set.
-    navigator.pushAndRemoveUntil(getPageRoute(const RatesScreen(isOnboarding: true)), (_) => false);
+    // Straight in: each worker's rate is set with the worker, and a group's
+    // rate the first time that group is paid.
+    navigator.pushAndRemoveUntil(getPageRoute(const HomeScreen()), (_) => false);
   }
 
   @override
