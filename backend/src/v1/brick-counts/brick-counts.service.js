@@ -7,6 +7,7 @@ import { hasRate, payFor, rateMissing } from "../../services/pay.js";
 import { periodFor } from "../../services/periods.js";
 import { postBrickCount } from "../../services/posting.js";
 import {
+  assertNotPaidByDay,
   assertWorkersExist,
   groupRows,
   loadWorkTypes,
@@ -89,6 +90,7 @@ async function workRowsFor(client, ctx, data, saved, previous = null) {
     data.molder_id,
     ...(data.groups ?? []).flatMap((group) => group.workers.map((worker) => worker.worker_id)),
   ]);
+  await assertNotPaidByDay(client, ctx.factory.id, data.groups);
   if (data.truck_id) {
     const { rowCount } = await client.query("SELECT 1 FROM trucks WHERE factory_id = $1 AND id = $2", [
       ctx.factory.id,

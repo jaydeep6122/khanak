@@ -1,11 +1,18 @@
 import { z } from "zod";
 import { date, id, listQuery, money, optionalText, phone, queryBoolean, text } from "../../utils/schemas.js";
 
-// pathera, bharai, khadkaniyo, nikasi, driver, roj, other.
+// paatla, bharai, khadkaniyo, nikasi, driver, roj, other.
 export const MAIN_WORKS = ["molder", "loader", "stacker", "unloader", "driver", "daily", "other"];
 
-/** Only a molder (per 1000 bricks) or day worker (per day) has a rate of their own. */
+/** A molder (per 1000 bricks) and a day worker (per day) must have a rate of their own. */
 export const HAS_OWN_RATE = new Set(["molder", "daily"]);
+
+/**
+ * A bharai or nikasi worker is paid either at the group's rate per 1000, or
+ * by the day: then their own rate is a day rate, and they are not picked for
+ * group work; their days are typed in as day work.
+ */
+export const MAY_BE_PAID_BY_DAY = new Set(["loader", "unloader"]);
 
 /**
  * Group work each main work is paid for, at the group's rate. That rate must
@@ -13,7 +20,8 @@ export const HAS_OWN_RATE = new Set(["molder", "daily"]);
  * group_rates) the first time. Loading a vehicle is asked at the first sale.
  */
 export const GROUP_WORK = {
-  loader: ["drying_carry", "kiln_loading"],
+  // Carrying to dry and loading the kiln are paid at the one loading rate.
+  loader: ["kiln_loading"],
   stacker: ["stacking"],
   unloader: ["unloading"],
 };
@@ -40,6 +48,9 @@ const workerFields = {
 const salaryPair = (worker) =>
   (worker.monthly_salary == null) === (worker.salary_from == null);
 
+/** A bharai or nikasi worker with a day rate of their own: not paid as a group. */
+export const paidByDay = (worker) => MAY_BE_PAID_BY_DAY.has(worker.main_work) && worker.rate != null;
+
 /**
  * What is wrong with how this worker is paid, or null. No two molders are
  * paid alike, so a molder and a day worker each need their own rate, and a
@@ -52,8 +63,8 @@ export function ownPayProblem(worker) {
       message: worker.main_work === "molder" ? "Give this molder's rate per 1000 bricks" : "Give this worker's rate per day",
     };
   }
-  if (!HAS_OWN_RATE.has(worker.main_work) && worker.rate != null) {
-    return { path: "rate", message: "Only a molder or day worker has a rate of their own" };
+  if (!HAS_OWN_RATE.has(worker.main_work) && !MAY_BE_PAID_BY_DAY.has(worker.main_work) && worker.rate != null) {
+    return { path: "rate", message: "Only a molder, a day worker, or bharai or nikasi paid by the day has a rate of their own" };
   }
   if (worker.main_work === "driver" && worker.monthly_salary == null) {
     return { path: "monthly_salary", message: "Give the driver's monthly salary" };

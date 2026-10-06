@@ -1,5 +1,6 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:khanak/components/amountDialog.dart';
 import 'package:provider/provider.dart';
 import 'package:khanak/components/bigNumberField.dart';
 import 'package:khanak/components/initialBadge.dart';
@@ -253,27 +254,12 @@ class _BrickCountFormScreenState extends State<BrickCountFormScreen> {
   }
 
   Future<void> _editMolderAmount(double current) async {
-    final controller = TextEditingController(text: Formatters.formatDouble(current));
-    final value = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(_molder?.name ?? ''),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          style: context.text.headlineSmall,
-          decoration: const InputDecoration(prefixText: '₹ '),
-        ),
-        actions: [
-          if (_molderAmount != null)
-            TextButton(onPressed: () => Navigator.of(context).pop(''), child: Text('use_rate'.tr())),
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: Text('cancel'.tr())),
-          FilledButton(onPressed: () => Navigator.of(context).pop(controller.text.trim()), child: Text('save'.tr())),
-        ],
-      ),
+    final value = await showAmountDialog(
+      context,
+      title: _molder?.name ?? '',
+      initialValue: Formatters.formatDouble(current),
+      resetText: _molderAmount != null ? 'use_rate'.tr() : null,
     );
-    controller.dispose();
     if (value == null) return;
     setState(() => _molderAmount = value.isEmpty ? null : double.tryParse(value));
   }

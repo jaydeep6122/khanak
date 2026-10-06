@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:khanak/components/amountDialog.dart';
 import 'package:khanak/components/bigNumberField.dart';
 import 'package:khanak/components/floatingTabBar.dart';
 import 'package:khanak/components/groupedSection.dart';
@@ -123,5 +124,37 @@ void main() {
     await tester.tap(find.text('ભઠ્ઠામાં નાખી c'));
     await tester.pump();
     expect(reason, 'c');
+  });
+
+  // The rate and share dialogs were closed with back while their text field
+  // still used a controller the caller had already disposed.
+  testWidgets('the amount dialog closes with back without errors', (tester) async {
+    ignoreFontErrors();
+    final results = <String?>[];
+    await pump(
+      tester,
+      Builder(
+        builder: (context) => TextButton(
+          onPressed: () async => results.add(await showAmountDialog(context, title: 'Rate', initialValue: '100')),
+          child: const Text('open'),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '250');
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(results, [null]);
+
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '250');
+    await tester.tap(find.text('save'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(results.last, '250');
   });
 }

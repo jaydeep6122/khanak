@@ -29,7 +29,6 @@ describe("a new factory", () => {
     const codes = data(await f.get("/work-types", undefined, 200)).map((type) => type.code);
     expect(codes).toEqual([
       "molding",
-      "drying_carry",
       "kiln_loading",
       "stacking",
       "unloading",

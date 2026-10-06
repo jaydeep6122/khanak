@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:khanak/global/themes.dart';
 
 /// The save button pinned to the bottom of a form, on frosted glass, with
-/// what will be saved on its right ("સેવ કરો        ₹14,300").
+/// what will be saved beside the label, centred ("સેવ કરો · ₹14,300").
 ///
 /// Use as a Scaffold's `bottomNavigationBar` with `extendBody: true`, and
 /// keep [AppTheme.fabClearance] below the form so its end clears the bar.
@@ -68,22 +68,31 @@ class SaveBar extends StatelessWidget {
                                     child: CircularProgressIndicator(strokeWidth: 2.4, color: colors.onInk),
                                   ),
                                 )
-                              : Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        label,
-                                        style: context.text.titleMedium?.copyWith(color: colors.onInk),
-                                      ),
+                              // Centred: "સેવ કરો · ₹14,300".
+                              : Center(
+                                  child: Text.rich(
+                                    TextSpan(
+                                      text: label,
+                                      children: [
+                                        if (trailing != null) ...[
+                                          TextSpan(
+                                            text: '  ·  ',
+                                            style: TextStyle(color: colors.onInk.withValues(alpha: 0.5)),
+                                          ),
+                                          TextSpan(
+                                            text: trailing,
+                                            style: TextStyle(
+                                              color: context.isDark ? colors.primary : const Color(0xFFF2A07A),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
-                                    if (trailing != null)
-                                      Text(
-                                        trailing!,
-                                        style: context.text.titleMedium?.copyWith(
-                                          color: context.isDark ? colors.primary : const Color(0xFFF2A07A),
-                                        ),
-                                      ),
-                                  ],
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                    style: context.text.titleMedium?.copyWith(color: colors.onInk),
+                                  ),
                                 ),
                         ),
                       ),

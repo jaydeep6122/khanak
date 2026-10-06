@@ -1,5 +1,6 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:khanak/components/amountDialog.dart';
 import 'package:flutter/services.dart';
 import 'package:khanak/components/initialBadge.dart';
 import 'package:khanak/components/groupedSection.dart';
@@ -8,7 +9,6 @@ import 'package:khanak/components/workerPicker.dart';
 import 'package:khanak/global/constants.dart';
 import 'package:khanak/global/themes.dart';
 import 'package:khanak/helpers/formatters.dart';
-import 'package:khanak/helpers/inputFormatters.dart';
 import 'package:khanak/types/work.dart';
 import 'package:khanak/types/worker.dart';
 
@@ -172,28 +172,13 @@ class GroupEditor extends StatelessWidget {
   }
 
   Future<void> _editAmount(BuildContext context, Worker worker, double current) async {
-    final controller = TextEditingController(text: Formatters.formatDouble(current));
-    final value = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(worker.name),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          inputFormatters: [DecimalInputFormatter(decimals: 2)],
-          style: context.text.headlineSmall,
-          decoration: InputDecoration(prefixText: '₹ ', helperText: 'share_hand_help'.tr()),
-        ),
-        actions: [
-          if (group.amounts.containsKey(worker.id))
-            TextButton(onPressed: () => Navigator.of(context).pop(''), child: Text('share_equal'.tr())),
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: Text('cancel'.tr())),
-          FilledButton(onPressed: () => Navigator.of(context).pop(controller.text.trim()), child: Text('save'.tr())),
-        ],
-      ),
+    final value = await showAmountDialog(
+      context,
+      title: worker.name,
+      initialValue: Formatters.formatDouble(current),
+      helperText: 'share_hand_help'.tr(),
+      resetText: group.amounts.containsKey(worker.id) ? 'share_equal'.tr() : null,
     );
-    controller.dispose();
     if (value == null) return;
     final amount = double.tryParse(value);
     if (value.isEmpty || amount == null) {

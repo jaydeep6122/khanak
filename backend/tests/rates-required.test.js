@@ -36,7 +36,7 @@ describe("a rate is needed before work is priced", () => {
     molder_id: ramesh.id,
     groups,
   });
-  const carriers = () => [{ work_type_id: types.drying_carry.id, workers: [{ worker_id: dinesh.id }] }];
+  const carriers = () => [{ work_type_id: types.kiln_loading.id, workers: [{ worker_id: dinesh.id }] }];
 
   test("a group whose work has no rate yet cannot be paid from it", async () => {
     const res = await f.post("/brick-counts", count(carriers()), 400);
@@ -50,14 +50,14 @@ describe("a rate is needed before work is priced", () => {
   });
 
   test("a supervisor can neither set a rate nor get around it", async () => {
-    await s.patch(`/work-types/${types.drying_carry.id}`, { rate: 60 }, 403);
+    await s.patch(`/work-types/${types.kiln_loading.id}`, { rate: 60 }, 403);
     await s.post("/brick-counts", count(carriers()), 400);
   });
 
   test("the munim sets the rate when first needed, but nothing else about the work", async () => {
-    await m.patch(`/work-types/${types.drying_carry.id}`, { rate: 0 }, 400);
-    await m.patch(`/work-types/${types.drying_carry.id}`, { name: "Sukavani" }, 403);
-    await m.patch(`/work-types/${types.drying_carry.id}`, { rate: 60 }, 200);
+    await m.patch(`/work-types/${types.kiln_loading.id}`, { rate: 0 }, 400);
+    await m.patch(`/work-types/${types.kiln_loading.id}`, { name: "Sukavani" }, 403);
+    await m.patch(`/work-types/${types.kiln_loading.id}`, { rate: 60 }, 200);
     const saved = data(await m.post("/brick-counts", count(carriers()), 201));
     expect(saved.groups[0]).toMatchObject({ rate: "60.00", total: "600.00" });
     // Now the supervisor's counts are priced too.
@@ -70,18 +70,18 @@ describe("a rate is needed before work is priced", () => {
     await f.post("/work-entries", { ...body, amount: 2500 }, 201);
   });
 
-  test("bricks going into the kiln need the loading rate", async () => {
-    const body = {
-      counted_on: today(),
-      reason: "kiln_by_workers",
-      quantity: 5000,
-      already_counted: true,
-      kiln_id: kiln.id,
-      groups: [{ work_type_id: types.kiln_loading.id, workers: [{ worker_id: dinesh.id }] }, await stacked(f)],
-    };
-    await f.post("/brick-counts", body, 400);
-    await f.patch(`/work-types/${types.kiln_loading.id}`, { rate: 100 }, 200);
-    await f.post("/brick-counts", body, 201);
+  test("a bharai worker paid by the day is never paid a group's share", async () => {
+    const roj = data(await f.post("/workers", { name: "Roj Bharai", main_work: "loader", rate: 400 }, 201));
+    await f.post("/brick-counts", count([{ work_type_id: types.kiln_loading.id, workers: [{ worker_id: roj.id }] }]), 400);
+    // Their days are typed in as day work, at their own day rate.
+    const entry = data(
+      await f.post(
+        "/work-entries",
+        { worker_id: roj.id, work_type_id: types.daily.id, entry_date: today(), quantity: 2 },
+        201,
+      ),
+    );
+    expect(entry).toMatchObject({ rate: "400.00", amount: "800.00" });
   });
 
   describe("adding a worker who does group work", () => {
@@ -107,26 +107,17 @@ describe("a rate is needed before work is priced", () => {
       await g.post("/workers", { name: "Suresh", main_work: "stacker" }, 201);
     });
 
-    test("a loader needs carrying to drying and kiln loading both; nothing is kept from a refused try", async () => {
+    test("a bharai worker needs the loading rate per 1000, or a day rate of their own", async () => {
+      // Paid by the day: no loading rate needed.
+      await g.post("/workers", { name: "Ramu", main_work: "loader", rate: 400 }, 201);
+      await g.post("/workers", { name: "Dinesh", main_work: "loader" }, 400);
       await g.post(
         "/workers",
         { name: "Dinesh", main_work: "loader", group_rates: [{ work_type_id: rates.kiln_loading.id, rate: 100 }] },
-        400,
-      );
-      const kilnLoading = data(await g.get("/work-types", undefined, 200)).find((type) => type.code === "kiln_loading");
-      expect(kilnLoading.rate).toBe("0.00");
-      await g.post(
-        "/workers",
-        {
-          name: "Dinesh",
-          main_work: "loader",
-          group_rates: [
-            { work_type_id: rates.kiln_loading.id, rate: 100 },
-            { work_type_id: rates.drying_carry.id, rate: 60 },
-          ],
-        },
         201,
       );
+      // A khadkaniyo still has no day rate of their own.
+      await g.post("/workers", { name: "Mohan", main_work: "stacker", rate: 400 }, 400);
     });
 
     test("moving a worker to nikasi needs the nikasi rate", async () => {

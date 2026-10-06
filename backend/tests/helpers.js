@@ -62,7 +62,7 @@ export function factoryClient(auth, factoryId) {
 export async function setRates(f) {
   const types = data(await f.get("/work-types", undefined, 200));
   const byCode = Object.fromEntries(types.map((type) => [type.code, type]));
-  const rates = { molding: 550, drying_carry: 60, kiln_loading: 100, stacking: 2500, unloading: 120, truck_loading: 1500, daily: 400 };
+  const rates = { molding: 550, kiln_loading: 100, stacking: 2500, unloading: 120, truck_loading: 1500, daily: 400 };
   for (const [code, rate] of Object.entries(rates)) {
     await f.patch(`/work-types/${byCode[code].id}`, { rate }, 200);
   }
@@ -77,14 +77,14 @@ export async function addWorker(f, name, extra = {}) {
 const carrierGroups = new WeakMap();
 
 /**
- * Who carried bricks to the drying ground: one worker paid as drying_carry,
- * made once per factory.
+ * Who carried bricks to the drying ground: one worker paid at the loading
+ * rate, made once per factory.
  */
 export async function carried(f) {
   if (!carrierGroups.has(f)) {
     const types = data(await f.get("/work-types", undefined, 200));
-    const carry = types.find((type) => type.code === "drying_carry");
-    if (!carry.rate || Number(carry.rate) === 0) await f.patch(`/work-types/${carry.id}`, { rate: 60 }, 200);
+    const carry = types.find((type) => type.code === "kiln_loading");
+    if (!carry.rate || Number(carry.rate) === 0) await f.patch(`/work-types/${carry.id}`, { rate: 100 }, 200);
     const worker = await addWorker(f, "Sukavani carrier");
     carrierGroups.set(f, [{ work_type_id: carry.id, workers: [{ worker_id: worker.id }] }]);
   }

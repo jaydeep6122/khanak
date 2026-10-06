@@ -20,8 +20,8 @@ describe("main work and each worker's own rate", () => {
     expect(noRate.body.message).toMatch(/rate per 1000 bricks/);
     await f.post("/workers", { name: "Kishan", main_work: "daily" }, 400);
     await f.post("/workers", { name: "Suresh", main_work: "driver" }, 400);
-    // Group work is paid at the group's rate, never a worker's own.
-    await f.post("/workers", { name: "Dinesh", main_work: "loader", rate: 100 }, 400);
+    // A khadkaniyo is paid at the group's rate, never a rate of their own.
+    await f.post("/workers", { name: "Dinesh", main_work: "stacker", rate: 100 }, 400);
   });
 
   test("two molders are paid at their own rates", async () => {

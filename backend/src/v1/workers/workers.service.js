@@ -9,7 +9,7 @@ import { newShareToken } from "../../services/tokens.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { dec, money } from "../../utils/money.js";
 import { hasRate, rateMissing } from "../../services/pay.js";
-import { GROUP_WORK, HAS_OWN_RATE, ownPayProblem } from "./workers.schemas.js";
+import { GROUP_WORK, ownPayProblem, paidByDay } from "./workers.schemas.js";
 
 export const WORKER_COLUMNS = `id, name, nickname, village, phone, note, main_work, rate,
   monthly_salary, salary_from, is_active, left_on, share_enabled, created_at, updated_at`;
@@ -83,7 +83,7 @@ export async function getBalance(ctx, workerId) {
  * Sets the group rates sent with a worker, then makes sure the group work
  * this worker does is priced: no one is added to work that pays nothing.
  */
-async function priceGroupWork(client, ctx, mainWork, groupRates = []) {
+async function priceGroupWork(client, ctx, worker, groupRates = []) {
   for (const { work_type_id, rate } of groupRates) {
     const {
       rows: [before],
@@ -99,7 +99,8 @@ async function priceGroupWork(client, ctx, mainWork, groupRates = []) {
     await audit(client, { factoryId: ctx.factory.id, userId: ctx.user.id, action: "update", entityType: "work_type", entityId: before.id, before, after });
   }
 
-  const codes = GROUP_WORK[mainWork] ?? [];
+  // Paid by the day: no group rate is needed.
+  const codes = paidByDay(worker) ? [] : (GROUP_WORK[worker.main_work] ?? []);
   if (codes.length === 0) return;
   const { rows } = await client.query(
     "SELECT code, name, rate FROM work_types WHERE factory_id = $1 AND code = ANY($2::text[])",
@@ -111,7 +112,7 @@ async function priceGroupWork(client, ctx, mainWork, groupRates = []) {
 
 export async function createWorker(ctx, data) {
   return withTransaction(async (client) => {
-    await priceGroupWork(client, ctx, data.main_work, data.group_rates);
+    await priceGroupWork(client, ctx, data, data.group_rates);
     const {
       rows: [worker],
     } = await client.query(
@@ -144,18 +145,17 @@ export async function updateWorker(ctx, workerId, data) {
     const before = withoutToken(await loadWorker(client, ctx.factory.id, workerId, { lock: true }));
     const { group_rates: groupRates, ...fields } = data;
     data = fields;
-    // Moved to other group work: that work must be priced too.
-    if (groupRates || (data.main_work !== undefined && data.main_work !== before.main_work)) {
-      await priceGroupWork(client, ctx, data.main_work ?? before.main_work, groupRates);
-    }
+    const workChanged = data.main_work !== undefined && data.main_work !== before.main_work;
+    // A rate means something else in other work (per 1000 for a paatla, per
+    // day for others): moved without a new one, the old rate is dropped.
+    if (workChanged && data.rate === undefined && before.rate != null) data = { ...data, rate: null };
     const merged = { ...before, ...data };
+    // Moved to other group work, or from day pay to the group's: that work
+    // must be priced too.
+    const payChanged = workChanged || (data.rate !== undefined && paidByDay(before) !== paidByDay(merged));
+    if (groupRates || payChanged) await priceGroupWork(client, ctx, merged, groupRates);
     if ((merged.monthly_salary == null) !== (merged.salary_from == null)) {
       throw new ApiError(400, "Give both monthly_salary and salary_from, or neither");
-    }
-    // A worker moved to group work loses their own rate.
-    if (!HAS_OWN_RATE.has(merged.main_work) && data.rate === undefined && before.rate != null) {
-      data = { ...data, rate: null };
-      merged.rate = null;
     }
     const problem = ownPayProblem(merged);
     if (problem) throw new ApiError(400, `${problem.path}: ${problem.message}`);

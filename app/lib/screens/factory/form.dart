@@ -1,9 +1,9 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:khanak/components/appButton.dart';
 import 'package:khanak/components/appTextField.dart';
 import 'package:khanak/components/formBits.dart';
+import 'package:khanak/components/saveBar.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/global/themes.dart';
 import 'package:khanak/helpers/json.dart';
@@ -95,20 +95,35 @@ class _FactoryFormScreenState extends State<FactoryFormScreen> {
     final colors = context.colors;
 
     return Scaffold(
+      extendBody: true,
       appBar: AppBar(
         automaticallyImplyLeading: !widget.isOnboarding,
         title: Text(_editing ? 'factory_edit'.tr() : 'factory_new'.tr()),
       ),
+      bottomNavigationBar: SaveBar(
+        label: _editing ? 'save'.tr() : 'factory_create'.tr(),
+        isLoading: _busy,
+        onPressed: _submit,
+      ),
       body: SafeArea(
+        bottom: false,
         child: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.all(AppTheme.spaceLg),
+            padding: const EdgeInsets.fromLTRB(
+              AppTheme.spaceXl,
+              AppTheme.spaceSm,
+              AppTheme.spaceXl,
+              AppTheme.fabClearance,
+            ),
             children: [
               if (widget.isOnboarding) ...[
                 Text('factory_onboarding_title'.tr(), style: context.text.headlineSmall),
                 const SizedBox(height: AppTheme.spaceSm),
-                Text('factory_onboarding_subtitle'.tr(), style: context.text.bodyLarge?.copyWith(color: colors.inkSecondary)),
+                Text(
+                  'factory_onboarding_subtitle'.tr(),
+                  style: context.text.bodyLarge?.copyWith(color: colors.inkSecondary),
+                ),
                 const SizedBox(height: AppTheme.space2xl),
               ],
               AppTextField(
@@ -152,15 +167,10 @@ class _FactoryFormScreenState extends State<FactoryFormScreen> {
                   ),
                 ],
               ],
-              const SizedBox(height: AppTheme.space2xl),
-              AppButton(text: _editing ? 'save'.tr() : 'factory_create'.tr(), isLoading: _busy, onPressed: _submit),
               if (widget.isOnboarding) ...[
                 const SizedBox(height: AppTheme.space2xl),
                 Text('factory_added_by_owner'.tr(), style: context.text.bodyMedium, textAlign: TextAlign.center),
-                TextButton(
-                  onPressed: _busy ? null : () => openAfterSignIn(context),
-                  child: Text('check_again'.tr()),
-                ),
+                TextButton(onPressed: _busy ? null : () => openAfterSignIn(context), child: Text('check_again'.tr())),
               ],
             ],
           ),

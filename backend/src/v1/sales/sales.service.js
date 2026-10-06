@@ -6,7 +6,7 @@ import { stockWarnings } from "../../services/ledger.js";
 import { partyBalance, resolveParty } from "../../services/parties.js";
 import { periodFor } from "../../services/periods.js";
 import { postSale } from "../../services/posting.js";
-import { assertWorkersExist, groupRows, loadWorkTypes, rateLookup, readWork, savedRates } from "../../services/work-groups.js";
+import { assertNotPaidByDay, assertWorkersExist, groupRows, loadWorkTypes, rateLookup, readWork, savedRates } from "../../services/work-groups.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { dec, money } from "../../utils/money.js";
 
@@ -100,6 +100,7 @@ async function workRowsFor(client, ctx, data, saved) {
     ctx.factory.id,
     (data.groups ?? []).flatMap((group) => group.workers.map((worker) => worker.worker_id)),
   );
+  await assertNotPaidByDay(client, ctx.factory.id, data.groups);
   return groupRows(data.groups, types, {
     bricks: data.quantity,
     // One trip unless more are given; a customer's own vehicle is one trip

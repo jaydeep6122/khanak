@@ -13,7 +13,8 @@ describe("carrying bricks to dry", () => {
     const factory = await createFactory(owner.auth);
     f = factoryClient(owner.auth, factory.id);
     types = await setRates(f);
-    await f.patch(`/work-types/${types.drying_carry.id}`, { rate: 60 }, 200);
+    // Carrying to dry is paid at the one loading rate.
+    await f.patch(`/work-types/${types.kiln_loading.id}`, { rate: 60 }, 200);
     ramesh = await addWorker(f, "Ramesh", molder(550));
     dinesh = await addWorker(f, "Dinesh");
     jagdish = await addWorker(f, "Jagdish");
@@ -26,8 +27,9 @@ describe("carrying bricks to dry", () => {
     { work_type_id: workTypeId, workers: [{ worker_id: dinesh.id }, { worker_id: jagdish.id }] },
   ];
 
-  test("every factory starts with carrying to drying, paid per 1000 and shared", () => {
-    expect(types.drying_carry).toMatchObject({ pay_unit: "per_1000", is_group: true });
+  test("there is one loading rate, per 1000 and shared, for drying and the kiln alike", () => {
+    expect(types.kiln_loading).toMatchObject({ pay_unit: "per_1000", is_group: true });
+    expect(types.drying_carry).toBeUndefined();
   });
 
   test("a drying count needs someone who carried the bricks", async () => {
@@ -45,13 +47,13 @@ describe("carrying bricks to dry", () => {
           reason: "drying_by_workers",
           quantity: 10000,
           molder_id: ramesh.id,
-          groups: carriers(types.drying_carry.id),
+          groups: carriers(types.kiln_loading.id),
         },
         201,
       ),
     );
     expect(count.molder_pay).toMatchObject({ amount: "5500.00" });
-    expect(count.groups[0]).toMatchObject({ work_type_code: "drying_carry", total: "600.00" });
+    expect(count.groups[0]).toMatchObject({ work_type_code: "kiln_loading", total: "600.00" });
     expect(await balanceOf(f, dinesh.id)).toBe("300.00");
     expect(data(await f.get("/reports/stock", undefined, 200))).toMatchObject({ raw: 10000 });
   });
@@ -85,7 +87,7 @@ describe("carrying bricks to dry", () => {
         molder_id: ramesh.id,
         truck_id: truck.id,
         trips: 1,
-        groups: carriers(types.drying_carry.id),
+        groups: carriers(types.kiln_loading.id),
       },
       400,
     );
@@ -96,7 +98,7 @@ describe("carrying bricks to dry", () => {
         reason: "final",
         quantity: 1000,
         molder_id: ramesh.id,
-        groups: carriers(types.drying_carry.id),
+        groups: carriers(types.kiln_loading.id),
       },
       400,
     );
@@ -106,7 +108,7 @@ describe("carrying bricks to dry", () => {
   test("the old reason name is gone", async () => {
     await f.post(
       "/brick-counts",
-      { counted_on: today(), reason: "drying", quantity: 1000, molder_id: ramesh.id, groups: carriers(types.drying_carry.id) },
+      { counted_on: today(), reason: "drying", quantity: 1000, molder_id: ramesh.id, groups: carriers(types.kiln_loading.id) },
       400,
     );
   });
