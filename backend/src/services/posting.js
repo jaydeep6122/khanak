@@ -22,6 +22,7 @@ const WORK_COLUMNS = [
   "source",
   "brick_count_id",
   "kiln_unloading_id",
+  "sale_id",
   "created_by",
 ];
 
@@ -34,6 +35,7 @@ const MOVEMENT_COLUMNS = [
   "quantity",
   "brick_count_id",
   "kiln_unloading_id",
+  "sale_id",
 ];
 
 /**
@@ -106,4 +108,14 @@ export async function postKilnUnloading(client, unloading, workRows) {
     { stage: "kiln", kiln_id: unloading.kiln_id, quantity: -unloading.quantity },
     { stage: "fired", quantity: unloading.quantity },
   ]);
+}
+
+/** A sale takes its bricks out of fired stock and pays the truck loaders. */
+export async function postSale(client, sale, workRows) {
+  await clearSource(client, "sale_id", sale.id);
+  if (sale.cancelled_at) return;
+
+  const document = { ...sale, date: sale.sold_on };
+  await writeWork(client, "sale", "sale_id", document, workRows);
+  await writeMovements(client, "sale_id", document, [{ stage: "fired", quantity: -sale.quantity }]);
 }

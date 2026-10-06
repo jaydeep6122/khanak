@@ -1,6 +1,6 @@
 # Khanak Backend
 
-Express 5 + PostgreSQL (Supabase) API for brick kilns: workers and their pay, advances and settlements, brick counts and stock, kiln unloading, seasons, supervisors and subscriptions.
+Express 5 + PostgreSQL (Supabase) API for brick kilns: workers and their pay, advances and settlements, brick counts and stock per kiln, kiln unloading, sales with credit, trucks and diesel, expenses and suppliers, seasons, supervisors and subscriptions.
 
 ## Setup
 
@@ -39,8 +39,9 @@ The schema lives only in `migrations/` and is managed with [node-pg-migrate](htt
 ## How the books work
 
 - **A worker's balance is a sum, never a stored number.** `worker_ledger` (a view) lists what a worker earned (`work_entries`) and what passed between them and the factory (`worker_transactions`). Balance = credit − debit: positive means the factory owes the worker, negative means the worker owes.
-- **Brick stock is a sum too.** `brick_movements` holds signed quantities per stage: `raw` (kachi), `kiln` (in the bhatha), `fired` (pakki).
-- **`src/services/posting.js` is the only writer** of the pay and stock that brick counts and unloadings create. Saving, editing or cancelling one deletes its rows and writes them again from its current state.
+- **Brick stock is a sum too.** `brick_movements` holds signed quantities per stage: `raw` (kachi), `kiln` (in a bhatha, per kiln), `fired` (pakki). Counts into a kiln and nikasi name the kiln; sales take fired bricks out.
+- **Credit with customers and suppliers is a sum.** `party_ledger` (a view) lists sales, a hired truck's rent, expenses and payments; balance = what the party owes the factory, negative when the factory owes them (a supplier, or a customer's advance). A cash sale or a fully paid expense needs no party; anything left owing does.
+- **`src/services/posting.js` is the only writer** of the pay and stock that brick counts, unloadings and sales create. Saving, editing or cancelling one deletes its rows and writes them again from its current state.
 - **Every entry keeps the rate of its day.** Editing an old count keeps the rates it was made with; a rate change only affects new entries.
 - **Group work is one total split among the workers who did it.** Equal shares to the paisa (leftover paise go to the first workers), or amounts set by the owner or munim.
 - **Monthly salaries write themselves.** Each finished month (or the part up to the day the worker left) is added the next time a balance is read. Pay is never cut for absence.
@@ -53,12 +54,13 @@ The schema lives only in `migrations/` and is managed with [node-pg-migrate](htt
 | | owner | munim | supervisor |
 |---|---|---|---|
 | Brick counts, kiln unloading | ✓ | ✓ | own entries, same day, at the set rates |
+| Sales, expenses, customers and suppliers | ✓ | ✓ | |
 | Advances | ✓ | ✓ | from their own cash, never to themselves |
 | Settlements, day work, lump sums | ✓ | ✓ | |
 | Workers, trucks, seasons | ✓ | ✓ | names only |
 | Balances, ledgers | ✓ | ✓ | a worker's balance number; their own ledger |
 | Reports, cash of others | ✓ | ✓ | |
-| Rates, members, write-offs, subscription | ✓ | | |
+| Rates, members, write-offs (workers and customers), subscription | ✓ | | |
 
 Without a running subscription a factory can be read but not changed (`402`, `code: "subscription_inactive"`).
 
@@ -80,7 +82,11 @@ Authenticated routes need `Authorization: Bearer <access_token>`. Factory routes
 | Brick counts | `GET/POST /brick-counts` · `GET/PUT /brick-counts/:id` · `POST /brick-counts/:id/cancel` |
 | Kiln unloading | `GET/POST /kiln-unloadings` · `GET/PUT /kiln-unloadings/:id` · `POST /kiln-unloadings/:id/cancel` |
 | Day work, lump sums | `GET/POST /work-entries` · `GET/PUT /work-entries/:id` · `POST /work-entries/:id/cancel` |
-| Trucks | `GET/POST /trucks` · `PATCH /trucks/:id` |
+| Kilns | `GET/POST /kilns` · `PATCH /kilns/:id` |
+| Trucks | `GET/POST /trucks` · `PATCH /trucks/:id` · `GET /trucks/:id/report` (trips, delivery charges, diesel and its average, profit) |
+| Sales | `GET/POST /sales` · `GET /sales/last-rate` · `GET/PUT /sales/:id` · `POST /sales/:id/cancel` |
+| Expenses | `GET/POST /expenses` · `GET/PUT /expenses/:id` · `POST /expenses/:id/cancel` |
+| Customers, suppliers | `GET/POST /parties` · `GET/PATCH /parties/:id` · `GET /parties/:id/ledger` · `POST /parties/:id/payments` · `PUT /party-payments/:id` · `POST /party-payments/:id/cancel` |
 | Supervisor cash | `GET /cash` · `GET /cash/:holderId` · `POST /cash/handovers` · `POST /cash/handovers/:id/cancel` · `POST /cash/:holderId/settle` |
 | Reports | `GET /reports/summary`, `/stock`, `/activity` |
 | Public | `GET /v1/public/workers/:token` (a worker's own link, no login) |
