@@ -69,6 +69,35 @@ router.get("/summary", validate(z.object({ period_id: id.optional() }), "query")
     factoryId,
   ]);
 
+  // Credit with customers and suppliers: what the market owes, and what the
+  // factory owes its suppliers.
+  const {
+    rows: [credit],
+  } = await pool.query(
+    `SELECT COALESCE(sum(balance) FILTER (WHERE balance > 0), 0) AS receivable,
+            COALESCE(-sum(balance) FILTER (WHERE balance < 0), 0) AS payable
+     FROM (SELECT party_id, sum(owed) AS balance FROM party_ledger WHERE factory_id = $1 GROUP BY party_id) b`,
+    [factoryId],
+  );
+  const {
+    rows: [sales],
+  } = await pool.query(
+    `SELECT COALESCE(sum(quantity) FILTER (WHERE period_id = $2), 0)::bigint AS bricks_in_period,
+            COALESCE(sum(total) FILTER (WHERE period_id = $2), 0) AS amount_in_period,
+            COALESCE(sum(quantity) FILTER (WHERE sold_on = $3), 0)::bigint AS bricks_today,
+            COALESCE(sum(total) FILTER (WHERE sold_on = $3), 0) AS amount_today
+     FROM sales WHERE factory_id = $1 AND cancelled_at IS NULL`,
+    [factoryId, periodId, today],
+  );
+  const {
+    rows: [spent],
+  } = await pool.query(
+    `SELECT COALESCE(sum(amount) FILTER (WHERE period_id = $2), 0) AS in_period,
+            COALESCE(sum(amount) FILTER (WHERE spent_on = $3), 0) AS today
+     FROM expenses WHERE factory_id = $1 AND cancelled_at IS NULL`,
+    [factoryId, periodId, today],
+  );
+
   ok(res, {
     today,
     period,
@@ -80,6 +109,14 @@ router.get("/summary", validate(z.object({ period_id: id.optional() }), "query")
       unloaded_in_period: Number(bricks.unloaded_in_period),
     },
     money,
+    credit,
+    sales: {
+      bricks_today: Number(sales.bricks_today),
+      amount_today: sales.amount_today,
+      bricks_in_period: Number(sales.bricks_in_period),
+      amount_in_period: sales.amount_in_period,
+    },
+    expenses: spent,
   });
 });
 
