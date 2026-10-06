@@ -13,6 +13,7 @@ const FACTORY_COLUMNS = "id, name, owner_name, phone, city, state, language, cre
 // owner to set them; the app shows its own translated name for each code.
 const DEFAULT_WORK_TYPES = [
   { code: "molding", name: "Brick making", pay_unit: "per_1000", rate: "0", is_group: false },
+  { code: "drying_carry", name: "Carrying to drying", pay_unit: "per_1000", rate: "0", is_group: true },
   { code: "kiln_loading", name: "Kiln loading", pay_unit: "per_1000", rate: "0", is_group: true },
   { code: "stacking", name: "Kiln stacking and firing", pay_unit: "per_lakh", rate: "0", is_group: true },
   { code: "unloading", name: "Kiln unloading", pay_unit: "per_1000", rate: "0", is_group: true },

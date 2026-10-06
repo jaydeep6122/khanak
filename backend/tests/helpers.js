@@ -62,7 +62,7 @@ export function factoryClient(auth, factoryId) {
 export async function setRates(f) {
   const types = data(await f.get("/work-types", undefined, 200));
   const byCode = Object.fromEntries(types.map((type) => [type.code, type]));
-  const rates = { molding: 550, kiln_loading: 100, stacking: 2500, unloading: 120, truck_loading: 1500, daily: 400 };
+  const rates = { molding: 550, drying_carry: 60, kiln_loading: 100, stacking: 2500, unloading: 120, truck_loading: 1500, daily: 400 };
   for (const [code, rate] of Object.entries(rates)) {
     await f.patch(`/work-types/${byCode[code].id}`, { rate }, 200);
   }
@@ -72,6 +72,49 @@ export async function setRates(f) {
 /** A worker; main_work is 'other' unless given (a molder also needs a rate). */
 export async function addWorker(f, name, extra = {}) {
   return data(await f.post("/workers", { name, main_work: "other", ...extra }, 201));
+}
+
+const carrierGroups = new WeakMap();
+
+/**
+ * Who carried bricks to the drying ground: one worker paid as drying_carry,
+ * made once per factory.
+ */
+export async function carried(f) {
+  if (!carrierGroups.has(f)) {
+    const types = data(await f.get("/work-types", undefined, 200));
+    const carry = types.find((type) => type.code === "drying_carry");
+    if (!carry.rate || Number(carry.rate) === 0) await f.patch(`/work-types/${carry.id}`, { rate: 60 }, 200);
+    const worker = await addWorker(f, "Sukavani carrier");
+    carrierGroups.set(f, [{ work_type_id: carry.id, workers: [{ worker_id: worker.id }] }]);
+  }
+  return carrierGroups.get(f);
+}
+
+const stackerGroups = new WeakMap();
+
+/**
+ * The khadkaniyo who stacked bricks into the kiln: one worker paid as
+ * stacking, made once per factory (setting the stacking rate if it has none).
+ */
+export async function stacked(f) {
+  if (!stackerGroups.has(f)) {
+    const types = data(await f.get("/work-types", undefined, 200));
+    const stacking = types.find((type) => type.code === "stacking");
+    const worker = data(
+      await f.post(
+        "/workers",
+        {
+          name: "Khadkaniyo",
+          main_work: "stacker",
+          ...(Number(stacking.rate) > 0 ? {} : { group_rates: [{ work_type_id: stacking.id, rate: 2500 }] }),
+        },
+        201,
+      ),
+    );
+    stackerGroups.set(f, { work_type_id: stacking.id, workers: [{ worker_id: worker.id }] });
+  }
+  return stackerGroups.get(f);
 }
 
 export const molder = (rate = 550) => ({ main_work: "molder", rate });

@@ -1,4 +1,4 @@
-import { addWorker, closeDb, createFactory, data, daysAgo, factoryClient, molder, setRates, signup, today } from "./helpers.js";
+import { addWorker, closeDb, createFactory, data, daysAgo, factoryClient, molder, setRates, signup, today, stacked } from "./helpers.js";
 
 // Phase 2: selling bricks, credit with customers and suppliers, the truck
 // and what the factory spends.
@@ -28,7 +28,7 @@ describe("sales, credit, trucks and expenses", () => {
         quantity: 40000,
         molder_id: ramesh.id,
         kiln_id: kiln.id,
-        groups: [{ work_type_id: types.kiln_loading.id, workers: [{ worker_id: dinesh.id }] }],
+        groups: [{ work_type_id: types.kiln_loading.id, workers: [{ worker_id: dinesh.id }] }, await stacked(f)],
       },
       201,
     );

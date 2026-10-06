@@ -3,7 +3,7 @@ import { Filters, pageResult } from "../../db/sql.js";
 import { withTransaction } from "../../db/transaction.js";
 import { audit } from "../../services/audit.js";
 import { assertCanChange, stockWarnings } from "../../services/ledger.js";
-import { payFor } from "../../services/pay.js";
+import { hasRate, payFor, rateMissing } from "../../services/pay.js";
 import { periodFor } from "../../services/periods.js";
 import { postBrickCount } from "../../services/posting.js";
 import {
@@ -103,19 +103,33 @@ async function workRowsFor(client, ctx, data, saved, previous = null) {
     ]);
     if (!rowCount) throw new ApiError(400, "Unknown kiln_id");
   }
-  // Khadkaniya and nikasi are paid elsewhere, never from a count.
+  // A count pays the molder, whoever carried the bricks and, for bricks going
+  // into a kiln, the khadkaniya who stacked them there (per lakh). Nikasi
+  // is paid from its own entry.
+  const intoKiln = data.reason === "kiln_by_workers" || data.reason === "kiln_by_truck";
+  let carriers = false;
+  let stackers = false;
   for (const group of data.groups ?? []) {
     const code = types.byId.get(group.work_type_id)?.code;
-    if (code === "stacking" || code === "unloading") {
-      throw new ApiError(400, "A count pays only the workers who put the bricks in");
+    if (code === "unloading") throw new ApiError(400, "Nikasi is paid from the nikasi entry, not a count");
+    if (code === "stacking") {
+      if (!intoKiln) throw new ApiError(400, "Khadkaniya are paid only for bricks going into a kiln");
+      stackers = true;
+    } else {
+      carriers = true;
     }
   }
+  if (data.reason !== "final" && !carriers) {
+    throw new ApiError(400, intoKiln ? "Who put the bricks into the kiln?" : "Who carried the bricks to dry?");
+  }
+  if (intoKiln && !stackers) throw new ApiError(400, "Who stacked the bricks in the kiln (khadkaniya)?");
 
   const rateFor = rateLookup(saved);
   const rows = [];
   if (!data.already_counted) {
     const molding = types.byCode.get("molding");
     const rate = await molderRate(client, ctx, data.molder_id, molding, saved, previous);
+    if (data.molder_amount === undefined && !hasRate(rate)) throw rateMissing(molding);
     rows.push({
       worker_id: data.molder_id,
       work_type_id: molding.id,
@@ -140,11 +154,11 @@ async function workRowsFor(client, ctx, data, saved, previous = null) {
  * with, unless the bricks are now someone else's: then that molder's rate.
  */
 async function molderRate(client, ctx, molderId, molding, saved, previous) {
-  if (previous?.molder_id === molderId && saved.has(molding.id)) return saved.get(molding.id);
+  if (previous?.molder_id === molderId && hasRate(saved.get(molding.id))) return saved.get(molding.id);
   const {
     rows: [molder],
   } = await client.query("SELECT rate FROM workers WHERE factory_id = $1 AND id = $2", [ctx.factory.id, molderId]);
-  return molder?.rate ?? molding.rate;
+  return hasRate(molder?.rate) ? molder.rate : molding.rate;
 }
 
 const auditView = (count) => ({

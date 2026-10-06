@@ -1,5 +1,5 @@
 import { ApiError } from "../utils/ApiError.js";
-import { resolveGroup } from "./pay.js";
+import { hasRate, resolveGroup } from "./pay.js";
 
 /**
  * Shared by brick counts and kiln unloadings: both pay one or more groups of
@@ -42,7 +42,11 @@ export async function savedRates(db, column, sourceId) {
   return new Map(rows.map((row) => [row.work_type_id, row.rate]));
 }
 
-export const rateLookup = (saved) => (workType) => saved.get(workType.id) ?? workType.rate;
+/** An edited document keeps the rate it was made with, unless it was made with none. */
+export const rateLookup = (saved) => (workType) => {
+  const kept = saved.get(workType.id);
+  return hasRate(kept) ? kept : workType.rate;
+};
 
 /** One work entry per worker for every group. A kind of work may appear once. */
 export function groupRows(groups = [], types, options) {

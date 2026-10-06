@@ -7,6 +7,7 @@ import { requireRole } from "../../middlewares/auth.middlewares.js";
 import { idParams } from "../../middlewares/params.middlewares.js";
 import { validate } from "../../middlewares/validation.middlewares.js";
 import { audit } from "../../services/audit.js";
+import { hasRate } from "../../services/pay.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { context, created, ok } from "../../utils/http.js";
 import { money, text } from "../../utils/schemas.js";
@@ -74,9 +75,13 @@ router.post("/", requireRole("owner"), validate(createSchema), async (req, res) 
 });
 
 // Changing a rate applies to new entries only: every entry keeps the rate it
-// was made with.
-router.patch("/:typeId", requireRole("owner"), idParams("typeId"), validate(updateSchema), async (req, res) => {
+// was made with. The munim may set a rate (a kind of work's rate is asked the
+// first time it is used, by whoever enters it); anything else is the owner's.
+router.patch("/:typeId", requireRole("munim"), idParams("typeId"), validate(updateSchema), async (req, res) => {
   const ctx = context(req);
+  if (req.role !== "owner" && Object.keys(req.body).some((key) => key !== "rate")) {
+    throw new ApiError(403, "Only the owner can change a kind of work, other than its rate");
+  }
   const row = await withTransaction(async (client) => {
     const {
       rows: [before],
@@ -89,6 +94,9 @@ router.patch("/:typeId", requireRole("owner"), idParams("typeId"), validate(upda
       throw new ApiError(400, "How a built-in kind of work is paid cannot be changed; add a new kind instead");
     }
     checkShape({ ...before, ...req.body });
+    if (req.body.rate !== undefined && req.body.rate !== null && !hasRate(req.body.rate)) {
+      throw new ApiError(400, "A rate must be above zero");
+    }
 
     const set = setClause(req.body, ["name", "pay_unit", "rate", "is_group", "is_active", "sort_order"]);
     if (set.keys.length === 0) return before;

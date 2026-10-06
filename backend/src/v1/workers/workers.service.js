@@ -8,7 +8,8 @@ import { accrueSalaries } from "../../services/salaries.js";
 import { newShareToken } from "../../services/tokens.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { dec, money } from "../../utils/money.js";
-import { HAS_OWN_RATE, ownPayProblem } from "./workers.schemas.js";
+import { hasRate, rateMissing } from "../../services/pay.js";
+import { GROUP_WORK, HAS_OWN_RATE, ownPayProblem } from "./workers.schemas.js";
 
 export const WORKER_COLUMNS = `id, name, nickname, village, phone, note, main_work, rate,
   monthly_salary, salary_from, is_active, left_on, share_enabled, created_at, updated_at`;
@@ -78,8 +79,39 @@ export async function getBalance(ctx, workerId) {
   };
 }
 
+/**
+ * Sets the group rates sent with a worker, then makes sure the group work
+ * this worker does is priced: no one is added to work that pays nothing.
+ */
+async function priceGroupWork(client, ctx, mainWork, groupRates = []) {
+  for (const { work_type_id, rate } of groupRates) {
+    const {
+      rows: [before],
+    } = await client.query("SELECT * FROM work_types WHERE factory_id = $1 AND id = $2 FOR UPDATE", [
+      ctx.factory.id,
+      work_type_id,
+    ]);
+    if (!before) throw new ApiError(400, "Unknown work_type_id in group_rates");
+    if (!before.is_group) throw new ApiError(400, `"${before.name}" is not group work`);
+    const {
+      rows: [after],
+    } = await client.query("UPDATE work_types SET rate = $1 WHERE id = $2 RETURNING *", [rate, before.id]);
+    await audit(client, { factoryId: ctx.factory.id, userId: ctx.user.id, action: "update", entityType: "work_type", entityId: before.id, before, after });
+  }
+
+  const codes = GROUP_WORK[mainWork] ?? [];
+  if (codes.length === 0) return;
+  const { rows } = await client.query(
+    "SELECT code, name, rate FROM work_types WHERE factory_id = $1 AND code = ANY($2::text[])",
+    [ctx.factory.id, codes],
+  );
+  const missing = rows.find((type) => !hasRate(type.rate));
+  if (missing) throw rateMissing(missing);
+}
+
 export async function createWorker(ctx, data) {
   return withTransaction(async (client) => {
+    await priceGroupWork(client, ctx, data.main_work, data.group_rates);
     const {
       rows: [worker],
     } = await client.query(
@@ -110,6 +142,12 @@ export async function createWorker(ctx, data) {
 export async function updateWorker(ctx, workerId, data) {
   const updated = await withTransaction(async (client) => {
     const before = withoutToken(await loadWorker(client, ctx.factory.id, workerId, { lock: true }));
+    const { group_rates: groupRates, ...fields } = data;
+    data = fields;
+    // Moved to other group work: that work must be priced too.
+    if (groupRates || (data.main_work !== undefined && data.main_work !== before.main_work)) {
+      await priceGroupWork(client, ctx, data.main_work ?? before.main_work, groupRates);
+    }
     const merged = { ...before, ...data };
     if ((merged.monthly_salary == null) !== (merged.salary_from == null)) {
       throw new ApiError(400, "Give both monthly_salary and salary_from, or neither");

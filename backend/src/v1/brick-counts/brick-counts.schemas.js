@@ -15,15 +15,17 @@ export const groupSchema = z.object({
   total_amount: money().optional(),
 });
 
+const REASONS = ["drying_by_workers", "drying_by_truck", "kiln_by_workers", "kiln_by_truck", "final"];
 const KILN_REASONS = ["kiln_by_workers", "kiln_by_truck"];
+const TRUCK_REASONS = ["drying_by_truck", "kiln_by_truck"];
 
 export const brickCountSchema = z
   .object({
     counted_on: date,
-    // drying: the drying ground is full or the bricks are lifted from it;
-    // kiln_by_workers / kiln_by_truck: they go into the kiln; final: the
+    // drying_by_workers / drying_by_truck: carried to the drying ground;
+    // kiln_by_workers / kiln_by_truck: carried into the kiln; final: the
     // season's last count when the workers leave.
-    reason: z.enum(["drying", "kiln_by_workers", "kiln_by_truck", "final"]),
+    reason: z.enum(REASONS),
     quantity: bricks,
     molder_id: id.nullable().optional(),
     // Bricks an earlier count already paid the molder for, now going into
@@ -40,6 +42,10 @@ export const brickCountSchema = z
   .superRefine((count, ctx) => {
     const fail = (path, message) => ctx.addIssue({ code: "custom", path: [path], message });
     const kiln = KILN_REASONS.includes(count.reason);
+    const byTruck = TRUCK_REASONS.includes(count.reason);
+    // Bricks carried somewhere, to dry or into a kiln, were carried by
+    // someone who is paid for it. The last count moves nothing.
+    const carried = count.reason !== "final";
     if (count.already_counted && !kiln) {
       fail("already_counted", "Only bricks going into the kiln can be already counted");
     }
@@ -47,18 +53,22 @@ export const brickCountSchema = z
     if (count.already_counted && count.molder_amount !== undefined) {
       fail("molder_amount", "Already counted bricks pay no molder");
     }
-    if (count.reason !== "kiln_by_truck" && (count.truck_id || count.trips)) {
-      fail("truck_id", "A truck is only for bricks carried to the kiln by truck");
+    if (!byTruck && (count.truck_id || count.trips)) {
+      fail("truck_id", "A truck is only for bricks carried by truck");
     }
+    if (byTruck && !count.truck_id) fail("truck_id", "Which truck carried the bricks?");
+    if (byTruck && !count.trips) fail("trips", "How many trips did the truck make?");
     // Bricks going into a kiln are always some molder's, put in by someone,
     // into one kiln: none of the three may be left out.
     if (kiln && !count.kiln_id) fail("kiln_id", "Which kiln did the bricks go into?");
     if (!kiln && count.kiln_id) fail("kiln_id", "Only bricks going into a kiln have a kiln");
-    if (kiln && !(count.groups ?? []).some((group) => group.workers.length > 0)) {
-      fail("groups", "Who put the bricks into the kiln?");
+    // Which groups are carriers and which khadkaniya is checked against the
+    // kinds of work when saving.
+    if (carried && !(count.groups ?? []).some((group) => group.workers.length > 0)) {
+      fail("groups", kiln ? "Who put the bricks into the kiln?" : "Who carried the bricks to dry?");
     }
-    if (!kiln && (count.groups ?? []).length > 0) {
-      fail("groups", "Only bricks going into a kiln pay a loading group");
+    if (!carried && (count.groups ?? []).length > 0) {
+      fail("groups", "The last count pays no one for carrying");
     }
   });
 
@@ -67,7 +77,7 @@ export const listBrickCountsQuery = listQuery({
   from: date.optional(),
   to: date.optional(),
   period_id: id.optional(),
-  reason: z.enum(["drying", "kiln_by_workers", "kiln_by_truck", "final"]).optional(),
+  reason: z.enum(REASONS).optional(),
   molder_id: id.optional(),
   include_cancelled: queryBoolean.optional(),
 });

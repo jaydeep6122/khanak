@@ -1,4 +1,4 @@
-import { addWorker, balanceOf, closeDb, createFactory, data, daysAgo, factoryClient, molder, setRates, signup, today } from "./helpers.js";
+import { addWorker, balanceOf, closeDb, createFactory, data, daysAgo, factoryClient, molder, setRates, signup, today, carried } from "./helpers.js";
 
 // The planning walk-through: one ordinary season at the owner's kiln.
 describe("an ordinary season", () => {
@@ -37,7 +37,7 @@ describe("an ordinary season", () => {
   test("bricks counted on the drying ground pay the molder and add raw stock", async () => {
     const res = await f.post(
       "/brick-counts",
-      { counted_on: daysAgo(20), reason: "drying", quantity: 18000, molder_id: ramesh.id },
+      { counted_on: daysAgo(20), reason: "drying_by_workers", groups: await carried(f), quantity: 18000, molder_id: ramesh.id },
       201,
     );
     expect(data(res).molder_pay).toMatchObject({ worker_id: ramesh.id, rate: "550.00", amount: "9900.00" });
@@ -45,7 +45,7 @@ describe("an ordinary season", () => {
     expect(data(await f.get("/reports/stock", undefined, 200))).toMatchObject({ raw: 18000, kiln: 0, fired: 0 });
   });
 
-  test("already counted bricks going into the kiln pay the loaders, not the molder", async () => {
+  test("already counted bricks going into the kiln pay the loaders and khadkaniya, not the molder", async () => {
     const res = await f.post(
       "/brick-counts",
       {
@@ -56,6 +56,7 @@ describe("an ordinary season", () => {
         kiln_id: kiln.id,
         groups: [
           { work_type_id: types.kiln_loading.id, workers: [{ worker_id: dinesh.id }, { worker_id: jagdish.id }] },
+          { work_type_id: types.stacking.id, workers: [{ worker_id: mahesh.id }] },
         ],
       },
       201,
@@ -73,15 +74,14 @@ describe("an ordinary season", () => {
     expect(stock.kilns).toEqual([expect.objectContaining({ id: kiln.id, name: "Bhatho 1", quantity: 18000 })]);
   });
 
-  test("khadkaniya are paid by hand, per lakh bricks stacked", async () => {
-    const entry = data(
-      await f.post(
-        "/work-entries",
-        { worker_id: mahesh.id, work_type_id: types.stacking.id, entry_date: daysAgo(12), quantity: 18000 },
-        201,
-      ),
+  test("khadkaniya are paid per lakh bricks stacked, from the count, never by hand", async () => {
+    // 18,000 bricks at ₹2,500 a lakh.
+    expect(await balanceOf(f, mahesh.id)).toBe("450.00");
+    await f.post(
+      "/work-entries",
+      { worker_id: mahesh.id, work_type_id: types.stacking.id, entry_date: daysAgo(12), quantity: 18000 },
+      400,
     );
-    expect(entry).toMatchObject({ rate: "2500.00", amount: "450.00" });
   });
 
   test("new bricks carried to the kiln by truck", async () => {
@@ -100,6 +100,7 @@ describe("an ordinary season", () => {
         kiln_id: kiln.id,
         groups: [
           { work_type_id: types.kiln_loading.id, workers: [{ worker_id: dinesh.id }, { worker_id: jagdish.id }] },
+          { work_type_id: types.stacking.id, workers: [{ worker_id: mahesh.id }] },
         ],
       },
       201,
@@ -168,19 +169,19 @@ describe("an ordinary season", () => {
   test("a molder's new rate applies to new counts only, even when an old count is edited", async () => {
     await f.patch(`/workers/${ramesh.id}`, { rate: 600 }, 200);
 
-    const counts = data(await f.get("/brick-counts", { reason: "drying" }, 200));
+    const counts = data(await f.get("/brick-counts", { reason: "drying_by_workers" }, 200));
     const drying = counts[0];
     const edited = data(
       await f.put(
         `/brick-counts/${drying.id}`,
-        { counted_on: drying.counted_on, reason: "drying", quantity: 18500, molder_id: ramesh.id },
+        { counted_on: drying.counted_on, reason: "drying_by_workers", groups: await carried(f), quantity: 18500, molder_id: ramesh.id },
         200,
       ),
     );
     expect(edited.molder_pay).toMatchObject({ rate: "550.00", amount: "10175.00" });
 
     const fresh = data(
-      await f.post("/brick-counts", { counted_on: daysAgo(2), reason: "drying", quantity: 1000, molder_id: ramesh.id }, 201),
+      await f.post("/brick-counts", { counted_on: daysAgo(2), reason: "drying_by_workers", groups: await carried(f), quantity: 1000, molder_id: ramesh.id }, 201),
     );
     expect(fresh.molder_pay).toMatchObject({ rate: "600.00", amount: "600.00" });
     // 17000 + 275 (edit) + 600 (new count)
@@ -206,7 +207,7 @@ describe("an ordinary season", () => {
 
   test("a cancelled count takes its pay and stock away", async () => {
     const fresh = data(
-      await f.post("/brick-counts", { counted_on: today(), reason: "drying", quantity: 5000, molder_id: ramesh.id }, 201),
+      await f.post("/brick-counts", { counted_on: today(), reason: "drying_by_workers", groups: await carried(f), quantity: 5000, molder_id: ramesh.id }, 201),
     );
     expect(await balanceOf(f, ramesh.id)).toBe("3000.00");
     const cancelled = data(await f.post(`/brick-counts/${fresh.id}/cancel`, { reason: "galat ginti" }, 200));
@@ -214,7 +215,7 @@ describe("an ordinary season", () => {
     expect(await balanceOf(f, ramesh.id)).toBe("0.00");
     await f.put(
       `/brick-counts/${fresh.id}`,
-      { counted_on: today(), reason: "drying", quantity: 5000, molder_id: ramesh.id },
+      { counted_on: today(), reason: "drying_by_workers", groups: await carried(f), quantity: 5000, molder_id: ramesh.id },
       409,
     );
   });
@@ -229,20 +230,20 @@ describe("an ordinary season", () => {
   });
 
   test("bad counts are refused", async () => {
-    await f.post("/brick-counts", { counted_on: today(), reason: "drying", quantity: 100 }, 400);
+    await f.post("/brick-counts", { counted_on: today(), reason: "drying_by_workers", groups: await carried(f), quantity: 100 }, 400);
     await f.post(
       "/brick-counts",
-      { counted_on: today(), reason: "drying", quantity: 100, molder_id: ramesh.id, already_counted: true },
+      { counted_on: today(), reason: "drying_by_workers", groups: await carried(f), quantity: 100, molder_id: ramesh.id, already_counted: true },
       400,
     );
     await f.post(
       "/brick-counts",
-      { counted_on: daysAgo(-1), reason: "drying", quantity: 100, molder_id: ramesh.id },
+      { counted_on: daysAgo(-1), reason: "drying_by_workers", groups: await carried(f), quantity: 100, molder_id: ramesh.id },
       400,
     );
     await f.post(
       "/brick-counts",
-      { counted_on: daysAgo(400), reason: "drying", quantity: 100, molder_id: ramesh.id },
+      { counted_on: daysAgo(400), reason: "drying_by_workers", groups: await carried(f), quantity: 100, molder_id: ramesh.id },
       400,
     );
     await f.post(
@@ -264,15 +265,18 @@ describe("an ordinary season", () => {
       quantity: 100,
       molder_id: ramesh.id,
       kiln_id: kiln.id,
-      groups: [{ work_type_id: types.kiln_loading.id, workers: [{ worker_id: dinesh.id }] }],
+      groups: [{ work_type_id: types.kiln_loading.id, workers: [{ worker_id: dinesh.id }] }, { work_type_id: types.stacking.id, workers: [{ worker_id: mahesh.id }] }],
     };
     await f.post("/brick-counts", { ...intoKiln, molder_id: undefined }, 400);
     await f.post("/brick-counts", { ...intoKiln, groups: [] }, 400);
     await f.post("/brick-counts", { ...intoKiln, kiln_id: undefined }, 400);
-    // Khadkaniya are not paid from a count.
+    // Khadkaniya are needed going into the kiln, and loaders besides them.
+    await f.post("/brick-counts", { ...intoKiln, groups: [intoKiln.groups[0]] }, 400);
+    await f.post("/brick-counts", { ...intoKiln, groups: [intoKiln.groups[1]] }, 400);
+    // Bricks carried to dry pay no khadkaniya.
     await f.post(
       "/brick-counts",
-      { ...intoKiln, groups: [{ work_type_id: types.stacking.id, workers: [{ worker_id: mahesh.id }] }] },
+      { ...intoKiln, reason: "drying_by_workers", kiln_id: undefined, groups: [...(await carried(f)), intoKiln.groups[1]] },
       400,
     );
   });

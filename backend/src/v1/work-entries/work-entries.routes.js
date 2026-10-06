@@ -8,7 +8,7 @@ import { idParams } from "../../middlewares/params.middlewares.js";
 import { validate } from "../../middlewares/validation.middlewares.js";
 import { audit } from "../../services/audit.js";
 import { workerBalance } from "../../services/ledger.js";
-import { payFor } from "../../services/pay.js";
+import { hasRate, payFor, rateMissing } from "../../services/pay.js";
 import { periodFor } from "../../services/periods.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { context, created, ok, paged } from "../../utils/http.js";
@@ -71,6 +71,9 @@ async function priced(db, factoryId, data, keptRate) {
   } = await db.query("SELECT * FROM work_types WHERE factory_id = $1 AND id = $2", [factoryId, data.work_type_id]);
   if (!type) throw new ApiError(400, "Unknown work_type_id");
   if (type.code === "salary") throw new ApiError(400, "Monthly salary is added by itself at the end of each month");
+  if (type.code === "stacking") {
+    throw new ApiError(400, "Khadkaniya are paid from the counts of bricks going into the kiln");
+  }
 
   const {
     rows: [worker],
@@ -87,7 +90,8 @@ async function priced(db, factoryId, data, keptRate) {
   if (data.quantity === undefined) throw new ApiError(400, `"${type.name}" needs a quantity`);
   // A day worker's own rate, when they are paid for day work.
   const ownRate = type.code === "daily" && worker.main_work === "daily" ? worker.rate : null;
-  const rate = keptRate ?? ownRate ?? type.rate;
+  const rate = [keptRate, ownRate, type.rate].find(hasRate) ?? null;
+  if (data.amount === undefined && !hasRate(rate)) throw rateMissing(type);
   return {
     quantity: data.quantity,
     rate,

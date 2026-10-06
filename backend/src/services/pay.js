@@ -20,6 +20,11 @@ export function payFor(payUnit, rate, quantity) {
   }
 }
 
+/** A rate that prices work: set, and above zero. */
+export const hasRate = (rate) => rate !== null && rate !== undefined && dec(rate).gt(0);
+
+export const rateMissing = (workType) => new ApiError(400, `No rate is set for "${workType.name}" yet`);
+
 /**
  * Splits `total` into `count` shares that add up to it exactly: everyone gets
  * the same to the paisa, and the leftover paise go one each to the first in
@@ -75,6 +80,9 @@ export function resolveGroup(group, workType, { bricks, trips, rateFor, allowAmo
       quantity = bricks;
     }
     rate = rateFor(workType);
+    // Pay is never worked out from a missing rate: it is set the first time
+    // the kind of work is used, or the amount is typed in by hand.
+    if (!setByHand && !hasRate(rate)) throw rateMissing(workType);
     byRate = payFor(workType.pay_unit, rate, quantity);
   }
 
