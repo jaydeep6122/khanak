@@ -1,12 +1,11 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:khanak/components/amountDialog.dart';
 import 'package:provider/provider.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/core/components/getters.dart';
 import 'package:khanak/global/constants.dart';
-import 'package:khanak/global/themes.dart';
 import 'package:khanak/helpers/formatters.dart';
-import 'package:khanak/helpers/inputFormatters.dart';
 import 'package:khanak/helpers/toastNotifications.dart';
 import 'package:khanak/types/work.dart';
 
@@ -34,34 +33,13 @@ Future<WorkType?> ensureRate(BuildContext context, WorkType type) async {
 /// of work with its new rate, or null when cancelled or it failed. A new rate
 /// applies to new entries only.
 Future<WorkType?> askRate(BuildContext context, WorkType type) async {
-  final controller = TextEditingController(text: (type.rate ?? 0) == 0 ? '' : Formatters.formatDouble(type.rate!));
-  final value = await showDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(type.label),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('rate_ask_help'.tr(), style: context.text.bodyMedium),
-          const SizedBox(height: AppTheme.spaceMd),
-          TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [DecimalInputFormatter(decimals: 2)],
-            style: context.text.headlineSmall,
-            decoration: InputDecoration(prefixText: '₹ ', suffixText: 'rate_unit_${type.payUnit.value}'.tr()),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: Text('cancel'.tr())),
-        FilledButton(onPressed: () => Navigator.of(context).pop(controller.text.trim()), child: Text('save'.tr())),
-      ],
-    ),
+  final value = await showAmountDialog(
+    context,
+    title: type.label,
+    initialValue: (type.rate ?? 0) == 0 ? '' : Formatters.formatDouble(type.rate!),
+    help: 'rate_ask_help'.tr(),
+    suffixText: 'rate_unit_${type.payUnit.value}'.tr(),
   );
-  controller.dispose();
   if (value == null || value.isEmpty || !context.mounted) return null;
   if ((double.tryParse(value) ?? 0) <= 0) {
     showErrorToast('rate_above_zero'.tr());

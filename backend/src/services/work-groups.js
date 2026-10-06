@@ -28,6 +28,24 @@ export async function assertWorkersExist(db, factoryId, workerIds) {
 }
 
 /**
+ * A bharai or nikasi worker paid by the day is never paid a group's share:
+ * their days are typed in as day work instead.
+ */
+export async function assertNotPaidByDay(db, factoryId, groups = []) {
+  const ids = [...new Set(groups.flatMap((group) => group.workers.map((worker) => worker.worker_id)))];
+  if (ids.length === 0) return;
+  const {
+    rows: [worker],
+  } = await db.query(
+    `SELECT name FROM workers
+     WHERE factory_id = $1 AND id = ANY($2::uuid[]) AND main_work IN ('loader', 'unloader') AND rate IS NOT NULL
+     LIMIT 1`,
+    [factoryId, ids],
+  );
+  if (worker) throw new ApiError(400, `"${worker.name}" is paid by the day: type their days in as day work`);
+}
+
+/**
  * The rate each kind of work was paid at when this document was first saved.
  * Editing the document later keeps those rates, so a rate change made since
  * never alters pay that was already earned.

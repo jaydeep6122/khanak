@@ -18,10 +18,10 @@ import 'package:khanak/helpers/validators.dart';
 import 'package:khanak/types/work.dart';
 import 'package:khanak/types/worker.dart';
 
-/// A worker's details. What they mainly do comes first and is required, and
-/// so is what they are paid: no two molders are paid alike, so a molder and
-/// a day worker each have their own rate, and a driver a monthly salary.
-/// No photo: a nickname or village tells two Rameshes apart.
+/// A worker's details, kept short: the name, what they mainly do and what
+/// they are paid are required (a paatla's own rate per 1000 bricks, a
+/// driver's monthly salary, a group's rate the first time it is needed); a
+/// phone number and a note are optional. No photo.
 class WorkerFormScreen extends StatefulWidget {
   final Worker? worker;
 
@@ -38,8 +38,6 @@ class WorkerFormScreen extends StatefulWidget {
 class _WorkerFormScreenState extends State<WorkerFormScreen> {
   final _formKey = GlobalKey<FormState>();
   late final _nameController = TextEditingController(text: widget.worker?.name ?? widget.initialName);
-  late final _nicknameController = TextEditingController(text: widget.worker?.nickname);
-  late final _villageController = TextEditingController(text: widget.worker?.village);
   late final _phoneController = TextEditingController(text: widget.worker?.phone);
   late final _noteController = TextEditingController(text: widget.worker?.note);
   late final _rateController = TextEditingController(
@@ -67,8 +65,6 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
   void dispose() {
     for (final controller in [
       _nameController,
-      _nicknameController,
-      _villageController,
       _phoneController,
       _noteController,
       _rateController,
@@ -102,8 +98,6 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
       'name': _nameController.text.trim(),
       'main_work': work.value,
       'rate': work.hasOwnRate ? apiAmount(_rateController.text) : null,
-      'nickname': _text(_nicknameController),
-      'village': _text(_villageController),
       'phone': _text(_phoneController),
       'note': _text(_noteController),
       'monthly_salary': driver ? apiAmount(_salaryController.text) : null,
@@ -158,7 +152,12 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
             const SizedBox(height: AppTheme.spaceLg),
             GroupCaption('main_work'.tr()),
             ChoiceGrid<MainWork>(
-              options: MainWork.values,
+              // Roj is no longer a kind of worker; one saved as roj before
+              // still shows it.
+              options: [
+                for (final w in MainWork.values)
+                  if (w != MainWork.daily || widget.worker?.mainWork == MainWork.daily) w,
+              ],
               selected: work,
               label: (w) => w.displayName,
               icon: (w) => switch (w) {
@@ -222,21 +221,6 @@ class _WorkerFormScreenState extends State<WorkerFormScreen> {
               ),
             ],
             const SizedBox(height: AppTheme.space2xl),
-            AppTextField(
-              controller: _nicknameController,
-              labelText: 'nickname'.tr(),
-              hintText: 'nickname_hint'.tr(),
-              textCapitalization: TextCapitalization.words,
-              prefixIcon: Icons.label_outline_rounded,
-            ),
-            const SizedBox(height: AppTheme.spaceLg),
-            AppTextField(
-              controller: _villageController,
-              labelText: 'village'.tr(),
-              textCapitalization: TextCapitalization.words,
-              prefixIcon: Icons.place_outlined,
-            ),
-            const SizedBox(height: AppTheme.spaceLg),
             AppTextField(
               controller: _phoneController,
               labelText: 'whatsapp_number'.tr(),

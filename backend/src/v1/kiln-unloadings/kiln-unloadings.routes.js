@@ -10,6 +10,7 @@ import { assertCanChange, stockWarnings } from "../../services/ledger.js";
 import { periodFor } from "../../services/periods.js";
 import { postKilnUnloading } from "../../services/posting.js";
 import {
+  assertNotPaidByDay,
   assertWorkersExist,
   groupRows,
   loadWorkTypes,
@@ -77,6 +78,7 @@ async function workRowsFor(client, ctx, data, saved) {
     ctx.factory.id,
     (data.groups ?? []).flatMap((group) => group.workers.map((worker) => worker.worker_id)),
   );
+  await assertNotPaidByDay(client, ctx.factory.id, data.groups);
   return groupRows(data.groups, types, {
     bricks: data.quantity,
     rateFor: rateLookup(saved),

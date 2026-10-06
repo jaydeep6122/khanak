@@ -1,12 +1,13 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:khanak/components/appButton.dart';
-import 'package:khanak/components/appTextField.dart';
+import 'package:khanak/components/bigNumberField.dart';
 import 'package:khanak/components/formBits.dart';
+import 'package:khanak/components/saveBar.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/global/constants.dart';
 import 'package:khanak/global/themes.dart';
+import 'package:khanak/helpers/formatters.dart';
 import 'package:khanak/helpers/inputFormatters.dart';
 import 'package:khanak/helpers/json.dart';
 import 'package:khanak/helpers/toastNotifications.dart';
@@ -29,6 +30,12 @@ class _HandOverScreenState extends State<HandOverScreen> {
   Member? _holder;
   DateTime _date = DateTime.now();
   bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _amountController.addListener(() => setState(() {}));
+  }
 
   @override
   void dispose() {
@@ -62,12 +69,29 @@ class _HandOverScreenState extends State<HandOverScreen> {
         .where((m) => m.role != MemberRole.owner)
         .toList();
 
+    final amount = double.tryParse(_amountController.text) ?? 0;
+
     return Scaffold(
-      appBar: AppBar(title: Text('give_cash'.tr())),
+      extendBody: true,
+      appBar: AppBar(
+        title: Text('give_cash'.tr()),
+        actions: [DatePill(value: _date, onChanged: (d) => setState(() => _date = d))],
+      ),
+      bottomNavigationBar: SaveBar(
+        label: 'give_cash'.tr(),
+        trailing: amount > 0 ? Formatters.formatCurrency(amount) : null,
+        isLoading: _busy,
+        onPressed: _submit,
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(AppTheme.spaceLg),
+          padding: const EdgeInsets.fromLTRB(
+            AppTheme.spaceXl,
+            AppTheme.spaceSm,
+            AppTheme.spaceXl,
+            AppTheme.fabClearance,
+          ),
           children: [
             FieldLabel('to_whom'.tr()),
             if (members.isEmpty)
@@ -80,21 +104,17 @@ class _HandOverScreenState extends State<HandOverScreen> {
                 icon: (_) => Icons.person_rounded,
                 onSelected: (m) => setState(() => _holder = m),
               ),
-            const SizedBox(height: AppTheme.spaceLg),
-            AppTextField(
+            const SizedBox(height: AppTheme.space3xl),
+            BigNumberField(
               controller: _amountController,
-              labelText: 'amount'.tr(),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [DecimalInputFormatter(decimals: 2)],
-              prefixText: '₹ ',
+              label: 'amount'.tr(),
+              prefix: '₹',
+              decimal: true,
+              quickAdds: const [5000, 10000, 20000],
               validator: (v) => Validators.amount(v, fieldLabel: 'amount'.tr(), allowZero: false),
             ),
-            const SizedBox(height: AppTheme.spaceLg),
-            DateField(label: 'date'.tr(), value: _date, onChanged: (d) => setState(() => _date = d)),
-            const SizedBox(height: AppTheme.spaceLg),
-            AppTextField(controller: _noteController, labelText: 'note_optional'.tr()),
             const SizedBox(height: AppTheme.space2xl),
-            AppButton(text: 'give_cash'.tr(), isLoading: _busy, onPressed: _submit),
+            NoteCard(controller: _noteController, hint: 'note_optional'.tr()),
           ],
         ),
       ),

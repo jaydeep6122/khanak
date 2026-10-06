@@ -88,8 +88,9 @@ async function priced(db, factoryId, data, keptRate) {
     return { quantity: null, rate: null, amount: toMoney(data.amount) };
   }
   if (data.quantity === undefined) throw new ApiError(400, `"${type.name}" needs a quantity`);
-  // A day worker's own rate, when they are paid for day work.
-  const ownRate = type.code === "daily" && worker.main_work === "daily" ? worker.rate : null;
+  // A day worker's own rate (or a bharai or nikasi worker paid by the day),
+  // when they are paid for day work.
+  const ownRate = type.code === "daily" && ["daily", "loader", "unloader"].includes(worker.main_work) ? worker.rate : null;
   const rate = [keptRate, ownRate, type.rate].find(hasRate) ?? null;
   if (data.amount === undefined && !hasRate(rate)) throw rateMissing(type);
   return {

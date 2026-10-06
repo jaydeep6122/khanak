@@ -566,7 +566,7 @@
   "village": "Village",
   "wages_earned": "Wages earned",
   "whatsapp_no_number": "This worker has no WhatsApp number",
-  "whatsapp_number": "WhatsApp number",
+  "whatsapp_number": "WhatsApp number (optional)",
   "whatsapp_number_help": "Their own link is sent here",
   "whatsapp_open_failed": "WhatsApp could not be opened",
   "which_kiln": "Into which kiln?",
