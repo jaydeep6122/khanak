@@ -235,6 +235,9 @@ class _SaleFormScreenState extends State<SaleFormScreen> {
         rate: keptOrCurrentRate(_savedRates[loaders.type.id], loaders.type),
       );
       if (!loaders.fits(total)) return showErrorToast('shares_too_much'.tr());
+      // Each loader's bricks must add up to the bricks sold.
+      final bricksProblem = loaders.bricksProblem(_bricks);
+      if (bricksProblem != null) return showErrorToast(bricksProblem);
       groups.add(
         loaders.toJson(
           bricks: _bricks,

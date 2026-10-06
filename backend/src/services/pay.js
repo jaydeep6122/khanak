@@ -54,10 +54,9 @@ export function splitEqually(total, count) {
  * per_trip. Amounts per worker may be set by hand (every worker's, or none),
  * or a total set by hand is split equally. Otherwise:
  *
- * - work at each worker's own rate (see paidAtOwnRate): the bricks are
- *   shared equally, and each worker is paid
- *   their share at their own rate (`workerRate(workType, workerId)` gives
- *   `{ name, rate }`).
+ * - work at each worker's own rate (see paidAtOwnRate): each worker is paid
+ *   for the bricks they carried (given per worker, or an equal share) at
+ *   their own rate (`workerRate(workType, workerId)` gives `{ name, rate }`).
  * - other work: the total comes from the kind's rate (`rateFor(workType)`)
  *   and is split equally. A lump sum needs `total_amount`.
  *
@@ -85,6 +84,9 @@ export function resolveGroup(group, workType, { bricks, trips, rateFor, workerRa
   }
 
   if (paidAtOwnRate(workType)) return ownRateRows(group, workType, workerIds, { bricks, workerRate, setByHand });
+  if (group.workers.some((worker) => worker.bricks !== undefined)) {
+    throw new ApiError(400, `Bricks per worker are only for work paid at each worker's own rate`);
+  }
 
   let quantity = null;
   let rate = null;
@@ -118,13 +120,14 @@ export function resolveGroup(group, workType, { bricks, trips, rateFor, workerRa
 }
 
 /**
- * A group paid at each worker's own rate: their share of the bricks at it. A
- * worker's quantity is their share of the bricks, so their line reads
- * "2,500 × ₹100 / 1000".
+ * A group paid at each worker's own rate: the bricks each worker carried, at
+ * their rate. Each worker's bricks (`bricks` per worker) must add up to the
+ * document's bricks; left out, the bricks are shared equally. A worker's
+ * quantity is their bricks, so their line reads "2,500 × ₹100 / 1000".
  */
 function ownRateRows(group, workType, workerIds, { bricks, workerRate, setByHand }) {
   const size = workerIds.length;
-  const share = dec(bricks).dividedBy(size).toDecimalPlaces(3).toString();
+  const shares = bricksPerWorker(group, workType, bricks);
   const workers = workerIds.map((workerId) => workerRate(workType, workerId));
   const rates = workers.map((worker) => (hasRate(worker.rate) ? worker.rate : null));
   // Pay is never worked out from a missing rate: the worker's rate is set on
@@ -137,13 +140,30 @@ function ownRateRows(group, workType, workerIds, { bricks, workerRate, setByHand
   } else if (group.total_amount !== undefined) {
     amounts = splitEqually(group.total_amount, size);
   } else {
-    amounts = rates.map((rate) => money(dec(bricks).times(rate).dividedBy(1000 * size)));
+    amounts = rates.map((rate, i) => money(dec(shares[i]).times(rate).dividedBy(1000)));
   }
   const total = group.total_amount ?? money(sum(amounts));
   return groupEntries(workType, workerIds, amounts, total, (i) => ({
-    quantity: share,
+    quantity: shares[i],
     rate: rates[i],
   }));
+}
+
+/** Each worker's bricks: as given (every worker's, adding up to `bricks`), or an equal share. */
+function bricksPerWorker(group, workType, bricks) {
+  const given = group.workers.map((worker) => worker.bricks);
+  if (given.every((count) => count === undefined)) {
+    const share = dec(bricks).dividedBy(group.workers.length).toDecimalPlaces(3).toString();
+    return given.map(() => share);
+  }
+  if (given.some((count) => count === undefined)) {
+    throw new ApiError(400, `Give every worker's bricks in "${workType.name}", or none`);
+  }
+  const added = given.reduce((a, b) => a + b, 0);
+  if (added !== Number(bricks)) {
+    throw new ApiError(400, `The bricks in "${workType.name}" add up to ${added}, not ${bricks}`);
+  }
+  return given.map(String);
 }
 
 function groupEntries(workType, workerIds, amounts, total, quantityAndRate) {

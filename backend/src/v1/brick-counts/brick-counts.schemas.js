@@ -3,13 +3,15 @@ import { bricks, date, id, listQuery, money, optionalText, queryBoolean } from "
 
 /**
  * One group of workers paid together, e.g. the two who loaded the kiln.
- * Amounts per worker and total_amount are for the owner or munim only; left
- * out, the rate gives the total and it is split equally.
+ * For work paid at each worker's own rate, `bricks` per worker says how many
+ * each carried (every worker's, adding up to the bricks counted); left out,
+ * the bricks are shared equally. Amounts per worker and total_amount are for
+ * the owner or munim only.
  */
 export const groupSchema = z.object({
   work_type_id: id,
   workers: z
-    .array(z.object({ worker_id: id, amount: money().optional() }))
+    .array(z.object({ worker_id: id, bricks: bricks.optional(), amount: money().optional() }))
     .min(1, "A group needs at least one worker")
     .max(100),
   total_amount: money().optional(),
