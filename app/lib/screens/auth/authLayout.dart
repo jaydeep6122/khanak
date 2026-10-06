@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:khanak/components/brickMark.dart';
+import 'package:khanak/components/appLogo.dart';
 import 'package:khanak/global/themes.dart';
 
 /// Shared frame for sign-in screens: logo, heading and a centred form.
@@ -42,11 +42,11 @@ class AuthLayout extends StatelessWidget {
                     if (showLogo) ...[
                       const Align(
                         alignment: Alignment.centerLeft,
-                        child: BrickMark(),
+                        child: AppLogo(),
                       ),
                       const SizedBox(height: AppTheme.space2xl),
                     ],
-                    Text(title, style: context.text.headlineMedium),
+                    Text(title, style: context.text.headlineLarge),
                     const SizedBox(height: AppTheme.spaceSm),
                     Text(subtitle, style: context.text.bodyLarge?.copyWith(
                       color: context.colors.inkSecondary,

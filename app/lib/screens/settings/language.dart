@@ -2,7 +2,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:khanak/components/appCard.dart';
-import 'package:khanak/components/brickMark.dart';
+import 'package:khanak/components/appLogo.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/global/constants.dart';
 import 'package:khanak/global/themes.dart';
@@ -38,7 +38,7 @@ class LanguageScreen extends StatelessWidget {
             children: [
               if (firstLaunch) ...[
                 const SizedBox(height: AppTheme.space2xl),
-                const Align(alignment: Alignment.centerLeft, child: BrickMark()),
+                const Align(alignment: Alignment.centerLeft, child: AppLogo()),
                 const SizedBox(height: AppTheme.space2xl),
                 // Asked in all three, since no language is chosen yet.
                 Text('ભાષા પસંદ કરો', style: context.text.headlineSmall),

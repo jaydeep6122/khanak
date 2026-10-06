@@ -4,6 +4,7 @@ import 'package:khanak/core/modules/entryModule.dart';
 import 'package:khanak/core/modules/factoryModule.dart';
 import 'package:khanak/core/modules/reportModule.dart';
 import 'package:khanak/core/modules/settingsModule.dart';
+import 'package:khanak/core/modules/tradeModule.dart';
 import 'package:khanak/core/modules/workerModule.dart';
 
 class Core extends ChangeNotifier {
@@ -12,6 +13,7 @@ class Core extends ChangeNotifier {
   late final WorkerModule worker;
   late final EntryModule entry;
   late final ReportModule report;
+  late final TradeModule trade;
   late final SettingsModule settings;
 
   static Core? _instance;
@@ -24,6 +26,7 @@ class Core extends ChangeNotifier {
     worker = WorkerModule(this);
     entry = EntryModule(this);
     report = ReportModule(this);
+    trade = TradeModule(this);
     settings = SettingsModule(this);
   }
 
@@ -37,6 +40,7 @@ class Core extends ChangeNotifier {
     worker.clear();
     entry.clear();
     report.clear();
+    trade.clear();
     notify();
   }
 
@@ -46,5 +50,6 @@ class Core extends ChangeNotifier {
     worker.markStale();
     entry.markStale();
     report.markStale();
+    trade.markStale();
   }
 }

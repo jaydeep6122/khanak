@@ -14,8 +14,7 @@ import {
   setRates,
   signup,
   today,
-  uniqueEmail,
-} from "./helpers.js";
+  uniqueEmail, carried } from "./helpers.js";
 
 afterAll(closeDb);
 
@@ -30,6 +29,7 @@ describe("a new factory", () => {
     const codes = data(await f.get("/work-types", undefined, 200)).map((type) => type.code);
     expect(codes).toEqual([
       "molding",
+      "drying_carry",
       "kiln_loading",
       "stacking",
       "unloading",
@@ -64,7 +64,7 @@ describe("seasons and the off-season", () => {
   });
 
   test("ending the season opens the off-season; entries after it go there", async () => {
-    await f.post("/brick-counts", { counted_on: daysAgo(40), reason: "drying", quantity: 10000, molder_id: ramesh.id }, 201);
+    await f.post("/brick-counts", { counted_on: daysAgo(40), reason: "drying_by_workers", groups: await carried(f), quantity: 10000, molder_id: ramesh.id }, 201);
 
     const switched = data(await f.post("/periods/end-season", { ended_on: daysAgo(30) }, 201));
     expect(switched.closed).toMatchObject({ kind: "season", ended_on: daysAgo(30) });
@@ -80,7 +80,7 @@ describe("seasons and the off-season", () => {
 
     // A late entry for a day inside the season still goes to the season.
     const late = data(
-      await f.post("/brick-counts", { counted_on: daysAgo(35), reason: "drying", quantity: 1000, molder_id: ramesh.id }, 201),
+      await f.post("/brick-counts", { counted_on: daysAgo(35), reason: "drying_by_workers", groups: await carried(f), quantity: 1000, molder_id: ramesh.id }, 201),
     );
     expect(late.period_id).toBe(switched.closed.id);
   });
@@ -139,7 +139,7 @@ describe("a worker's own link", () => {
     f = factoryClient(owner.auth, factory.id);
     await setRates(f);
     ramesh = await addWorker(f, "Ramesh", { ...molder(550), village: "Bihar", phone: "9876543210" });
-    await f.post("/brick-counts", { counted_on: today(), reason: "drying", quantity: 10000, molder_id: ramesh.id }, 201);
+    await f.post("/brick-counts", { counted_on: today(), reason: "drying_by_workers", groups: await carried(f), quantity: 10000, molder_id: ramesh.id }, 201);
     await f.post(`/workers/${ramesh.id}/transactions`, { kind: "advance", txn_date: today(), amount: 2000 }, 201);
   });
 

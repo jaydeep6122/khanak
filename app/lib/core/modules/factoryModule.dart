@@ -126,16 +126,6 @@ class FactoryModule extends CoreModule {
   /// The built-in kind with [code] (molding, kiln_loading, ...), once loaded.
   WorkType? workType(String code) => workTypes.value?.where((t) => t.code == code).firstOrNull;
 
-  /// True when no rate for brick work has been set yet: the owner is asked
-  /// to set them before the first count.
-  bool get ratesMissing {
-    final types = workTypes.value;
-    if (types == null) return false;
-    return ['molding', 'kiln_loading', 'stacking', 'unloading']
-        .map(workType)
-        .any((type) => type != null && (type.rate ?? 0) == 0);
-  }
-
   Future<bool> updateWorkType(String typeId, Map<String, dynamic> data) async {
     final json = await runSave(() => Api.instance.factory.updateWorkType(_selected!.id, typeId, data));
     if (json == null) return false;

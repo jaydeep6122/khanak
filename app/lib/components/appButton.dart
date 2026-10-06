@@ -24,7 +24,7 @@ class AppButton extends StatelessWidget {
   /// Fill the available width.
   final bool expand;
 
-  /// 40 pt tall instead of 52, for buttons inside cards and rows.
+  /// 42 pt tall instead of 54, for buttons inside cards and rows.
   final bool compact;
 
   const AppButton({
@@ -42,9 +42,9 @@ class AppButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final (Color background, Color foreground, BorderSide side) = switch (variant) {
-      AppButtonVariant.primary => (colors.primary, colors.onPrimary, BorderSide.none),
+      AppButtonVariant.primary => (colors.ink, colors.onInk, BorderSide.none),
       AppButtonVariant.secondary => (colors.primarySoft, colors.primary, BorderSide.none),
-      AppButtonVariant.outline => (Colors.transparent, colors.ink, BorderSide(color: colors.border)),
+      AppButtonVariant.outline => (colors.surface, colors.ink, BorderSide.none),
       AppButtonVariant.danger => (colors.danger, Colors.white, BorderSide.none),
       AppButtonVariant.text => (Colors.transparent, colors.primary, BorderSide.none),
     };
@@ -75,13 +75,13 @@ class AppButton extends StatelessWidget {
             ? background
             : background.withValues(alpha: 0.45),
         disabledForegroundColor: isLoading ? foreground : foreground.withValues(alpha: 0.6),
-        minimumSize: Size(0, compact ? 40 : 52),
+        minimumSize: Size(0, compact ? 42 : 54),
         padding: EdgeInsets.symmetric(horizontal: compact ? 14 : 20),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+          borderRadius: BorderRadius.circular(compact ? AppTheme.radiusSm : AppTheme.radiusMd),
           side: side,
         ),
-        textStyle: context.text.labelLarge?.copyWith(fontSize: compact ? 14 : 15),
+        textStyle: context.text.labelLarge?.copyWith(fontSize: compact ? 14 : 16),
       ),
       child: content,
     );

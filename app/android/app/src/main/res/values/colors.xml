@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Behind the splash screen, in light and dark alike; the app's own
+         splash uses the same colour (LogoColors.splash). -->
+    <color name="splash_background">#14110E</color>
+</resources>

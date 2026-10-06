@@ -2,7 +2,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:khanak/components/appCard.dart';
-import 'package:khanak/components/brickMark.dart';
+import 'package:khanak/components/appLogo.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/global/themes.dart';
 import 'package:khanak/helpers/navigation.dart';
@@ -40,7 +40,7 @@ class FactoryListScreen extends StatelessWidget {
                 borderColor: factory.id == module.selected?.id ? colors.primary : null,
                 child: Row(
                   children: [
-                    const BrickMark(size: 44),
+                    const AppLogo(size: 44),
                     const SizedBox(width: AppTheme.spaceMd),
                     Expanded(
                       child: Column(

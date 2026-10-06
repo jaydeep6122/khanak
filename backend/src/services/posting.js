@@ -39,12 +39,12 @@ const MOVEMENT_COLUMNS = [
 ];
 
 /**
- * Where a count's bricks go. Counted on the drying ground (or the last count
+ * Where a count's bricks go. Carried to the drying ground (or the last count
  * of the season) they are raw stock; counted going into a kiln they are that
  * kiln's stock, and if an earlier count already had them, they leave raw stock.
  */
 export function countMovements(count) {
-  if (count.reason === "drying" || count.reason === "final") {
+  if (count.reason === "drying_by_workers" || count.reason === "drying_by_truck" || count.reason === "final") {
     return [{ stage: "raw", quantity: count.quantity }];
   }
   const intoKiln = { stage: "kiln", kiln_id: count.kiln_id, quantity: count.quantity };

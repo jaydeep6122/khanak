@@ -9,10 +9,7 @@ void showStockWarnings(List<StockWarning> warnings) {
   if (warnings.isEmpty) return;
   final lines = warnings.map(
     (w) => 'stock_negative'.tr(
-      namedArgs: {
-        'stage': w.kilnName ?? 'stock_${w.stage}'.tr(),
-        'quantity': Formatters.formatNumber(w.quantity.toDouble()),
-      },
+      namedArgs: {'stage': w.kilnName ?? 'stock_${w.stage}'.tr(), 'quantity': Formatters.formatCount(w.quantity)},
     ),
   );
   // After the "saved" toast, so both are read.

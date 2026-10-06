@@ -42,6 +42,7 @@ The schema lives only in `migrations/` and is managed with [node-pg-migrate](htt
 - **Brick stock is a sum too.** `brick_movements` holds signed quantities per stage: `raw` (kachi), `kiln` (in a bhatha, per kiln), `fired` (pakki). Counts into a kiln and nikasi name the kiln; sales take fired bricks out.
 - **Credit with customers and suppliers is a sum.** `party_ledger` (a view) lists sales, a hired truck's rent, expenses and payments; balance = what the party owes the factory, negative when the factory owes them (a supplier, or a customer's advance). A cash sale or a fully paid expense needs no party; anything left owing does.
 - **`src/services/posting.js` is the only writer** of the pay and stock that brick counts, unloadings and sales create. Saving, editing or cancelling one deletes its rows and writes them again from its current state.
+- **No pay from a missing rate.** Work priced by a rate (a group's carrying or loading, a molder, other work) is refused while that rate is missing or zero, unless the owner or munim types the amount by hand. There is no rates screen: a worker who does group work (`loader`: carrying to drying and kiln loading; `stacker`: stacking; `unloader`: nikasi) can only be added once that work is priced, and its rate is sent with the worker as `group_rates` the first time. Other kinds of work are priced the first time they are used.
 - **Every entry keeps the rate of its day.** Editing an old count keeps the rates it was made with; a rate change only affects new entries.
 - **Group work is one total split among the workers who did it.** Equal shares to the paisa (leftover paise go to the first workers), or amounts set by the owner or munim.
 - **Monthly salaries write themselves.** Each finished month (or the part up to the day the worker left) is added the next time a balance is read. Pay is never cut for absence.
@@ -60,7 +61,8 @@ The schema lives only in `migrations/` and is managed with [node-pg-migrate](htt
 | Workers, trucks, seasons | ✓ | ✓ | names only |
 | Balances, ledgers | ✓ | ✓ | a worker's balance number; their own ledger |
 | Reports, cash of others | ✓ | ✓ | |
-| Rates, members, write-offs (workers and customers), subscription | ✓ | | |
+| Setting a kind of work's rate | ✓ | ✓ | |
+| Other changes to kinds of work, members, write-offs (workers and customers), subscription | ✓ | | |
 
 Without a running subscription a factory can be read but not changed (`402`, `code: "subscription_inactive"`).
 
@@ -109,7 +111,7 @@ Authenticated routes need `Authorization: Bearer <access_token>`. Factory routes
 }
 ```
 
-- `reason`: `drying` (drying ground full or lifted), `kiln_by_workers`, `kiln_by_truck`, `final` (last count when workers leave).
+- `reason`: `drying_by_workers` / `drying_by_truck` (carried to the drying ground), `kiln_by_workers` / `kiln_by_truck` (carried into a kiln), `final` (last count when workers leave). Every reason but `final` needs `groups` (who carried them, paid e.g. as `drying_carry` or `kiln_loading` per 1000, or `truck_loading` per trip); the `*_by_truck` ones also need `truck_id` and `trips`. Bricks going into a kiln also need the khadkaniya who stacked them: a `stacking` group, paid per lakh of the count's bricks. Khadkaniya are paid only this way, not as typed-in work.
 - `already_counted: true`: bricks an earlier count already paid the molder for, now going into the kiln. No molder pay; they move from raw to kiln stock.
 - Owner and munim may add `molder_amount`, a group's `total_amount` or each worker's `amount`.
 - The response carries `warnings` such as `{ "code": "negative_stock", "stage": "kiln", "quantity": -3000 }`. Stock never blocks an entry.

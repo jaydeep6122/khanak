@@ -9,8 +9,7 @@ import {
   pool,
   setRates,
   signup,
-  today,
-} from "./helpers.js";
+  today, carried } from "./helpers.js";
 
 // The owner is away; Mahesh (the khadkaniyo) runs the kiln as supervisor.
 describe("a supervisor running the kiln", () => {
@@ -64,7 +63,10 @@ describe("a supervisor running the kiln", () => {
       quantity: 15000,
       molder_id: ramesh.id,
       kiln_id: kiln.id,
-      groups: [{ work_type_id: types.kiln_loading.id, workers: [{ worker_id: mahesh.id }] }],
+      groups: [
+        { work_type_id: types.kiln_loading.id, workers: [{ worker_id: mahesh.id }] },
+        { work_type_id: types.stacking.id, workers: [{ worker_id: mahesh.id }] },
+      ],
     };
     const count = data(await s.post("/brick-counts", body, 201));
     expect(count).toMatchObject({ kiln_name: "Bhatho 1" });
@@ -73,7 +75,7 @@ describe("a supervisor running the kiln", () => {
     await s.post("/brick-counts", { ...body, molder_amount: 99999 }, 403);
     await s.post(
       "/brick-counts",
-      { ...body, groups: [{ work_type_id: types.kiln_loading.id, total_amount: 5000, workers: [{ worker_id: mahesh.id }] }] },
+      { ...body, groups: [{ work_type_id: types.kiln_loading.id, total_amount: 5000, workers: [{ worker_id: mahesh.id }] }, body.groups[1]] },
       403,
     );
   });
@@ -105,7 +107,8 @@ describe("a supervisor running the kiln", () => {
 
     // Their own account is open to them.
     const own = await s.get(`/workers/${mahesh.id}/ledger`, undefined, 200);
-    expect(own.body.balance).toBe("1500.00");
+    // ₹1,500 loading and ₹375 stacking (15,000 bricks at ₹2,500 a lakh).
+    expect(own.body.balance).toBe("1875.00");
 
     await s.get("/reports/summary", undefined, 403);
     await s.get("/reports/stock", undefined, 403);
@@ -117,22 +120,22 @@ describe("a supervisor running the kiln", () => {
 
   test("the supervisor changes only their own entries, the same day", async () => {
     const owners = data(
-      await f.post("/brick-counts", { counted_on: today(), reason: "drying", quantity: 1000, molder_id: ramesh.id }, 201),
+      await f.post("/brick-counts", { counted_on: today(), reason: "drying_by_workers", groups: await carried(f), quantity: 1000, molder_id: ramesh.id }, 201),
     );
     await s.get(`/brick-counts/${owners.id}`, undefined, 404);
     await s.post(`/brick-counts/${owners.id}/cancel`, {}, 403);
 
     const mine = data(
-      await s.post("/brick-counts", { counted_on: today(), reason: "drying", quantity: 51000, molder_id: ramesh.id }, 201),
+      await s.post("/brick-counts", { counted_on: today(), reason: "drying_by_workers", groups: await carried(f), quantity: 51000, molder_id: ramesh.id }, 201),
     );
     const fixed = data(
-      await s.put(`/brick-counts/${mine.id}`, { counted_on: today(), reason: "drying", quantity: 15000, molder_id: ramesh.id }, 200),
+      await s.put(`/brick-counts/${mine.id}`, { counted_on: today(), reason: "drying_by_workers", groups: await carried(f), quantity: 15000, molder_id: ramesh.id }, 200),
     );
     expect(fixed.quantity).toBe(15000);
 
     // The next day it is too late.
     await pool.query("UPDATE brick_counts SET created_at = now() - interval '2 days' WHERE id = $1", [mine.id]);
-    await s.put(`/brick-counts/${mine.id}`, { counted_on: today(), reason: "drying", quantity: 1, molder_id: ramesh.id }, 403);
+    await s.put(`/brick-counts/${mine.id}`, { counted_on: today(), reason: "drying_by_workers", groups: await carried(f), quantity: 1, molder_id: ramesh.id }, 403);
     // The owner still can.
     await f.post(`/brick-counts/${mine.id}/cancel`, { reason: "duplicate" }, 200);
 

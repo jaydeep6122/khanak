@@ -2,7 +2,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:khanak/components/appButton.dart';
-import 'package:khanak/components/brickMark.dart';
+import 'package:khanak/components/initialBadge.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/core/components/getters.dart';
 import 'package:khanak/global/constants.dart';
@@ -119,7 +119,7 @@ class _WorkerPickerState extends State<_WorkerPicker> {
           padding: const EdgeInsets.fromLTRB(AppTheme.spaceLg, 0, AppTheme.spaceLg, AppTheme.spaceSm),
           child: Row(
             children: [
-              Expanded(child: Text(widget.title, style: context.text.titleLarge)),
+              Expanded(child: Text(widget.title, style: context.text.headlineSmall)),
               if (core.can(MemberRole.munim))
                 TextButton.icon(
                   onPressed: _quickAdd,
@@ -135,8 +135,14 @@ class _WorkerPickerState extends State<_WorkerPicker> {
             onChanged: (value) => setState(() => _search = value.trim()),
             decoration: InputDecoration(
               hintText: 'search_worker'.tr(),
-              prefixIcon: const Icon(Icons.search_rounded),
+              prefixIcon: Icon(Icons.search_rounded, size: 21, color: colors.muted),
               isDense: true,
+              fillColor: colors.surfaceAlt,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                borderSide: BorderSide.none,
+              ),
             ),
           ),
         ),
@@ -172,9 +178,10 @@ class _WorkerPickerState extends State<_WorkerPicker> {
                     final worker = workers[index];
                     final picked = _isPicked(worker);
                     return ListTile(
-                      minVerticalPadding: 12,
-                      leading: InitialBadge(letter: worker.initial),
-                      title: Text(worker.name, style: context.text.titleMedium),
+                      minVerticalPadding: 10,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: AppTheme.spaceXl),
+                      leading: InitialBadge(letter: worker.initial, size: 40),
+                      title: Text(worker.name),
                       subtitle: Text(
                         [
                           worker.mainWork.displayName,
@@ -184,8 +191,8 @@ class _WorkerPickerState extends State<_WorkerPicker> {
                       trailing: widget.multi
                           ? Icon(
                               picked ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
-                              color: picked ? colors.primary : colors.muted,
-                              size: 28,
+                              color: picked ? colors.primary : colors.muted.withValues(alpha: 0.5),
+                              size: 26,
                             )
                           : null,
                       onTap: () => _tap(worker),

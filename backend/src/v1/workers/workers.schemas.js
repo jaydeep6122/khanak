@@ -7,6 +7,17 @@ export const MAIN_WORKS = ["molder", "loader", "stacker", "unloader", "driver", 
 /** Only a molder (per 1000 bricks) or day worker (per day) has a rate of their own. */
 export const HAS_OWN_RATE = new Set(["molder", "daily"]);
 
+/**
+ * Group work each main work is paid for, at the group's rate. That rate must
+ * be set before such a worker is added: it is asked right there (sent as
+ * group_rates) the first time. Loading a vehicle is asked at the first sale.
+ */
+export const GROUP_WORK = {
+  loader: ["drying_carry", "kiln_loading"],
+  stacker: ["stacking"],
+  unloader: ["unloading"],
+};
+
 const workerFields = {
   name: text(255),
   main_work: z.enum(MAIN_WORKS),
@@ -19,6 +30,11 @@ const workerFields = {
   // Drivers: a monthly salary from a date. Both or neither.
   monthly_salary: money({ gt: 0 }).nullable().optional(),
   salary_from: date.nullable().optional(),
+  // Rates of group work not priced yet, set together with the worker.
+  group_rates: z
+    .array(z.object({ work_type_id: id, rate: money({ gt: 0 }) }))
+    .max(5)
+    .optional(),
 };
 
 const salaryPair = (worker) =>

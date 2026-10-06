@@ -1,11 +1,12 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:khanak/components/appButton.dart';
-import 'package:khanak/components/appCard.dart';
-import 'package:khanak/components/appTextField.dart';
-import 'package:khanak/components/brickMark.dart';
+import 'package:khanak/components/balanceText.dart';
+import 'package:khanak/components/bigNumberField.dart';
+import 'package:khanak/components/initialBadge.dart';
 import 'package:khanak/components/formBits.dart';
+import 'package:khanak/components/groupedSection.dart';
+import 'package:khanak/components/saveBar.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/core/components/getters.dart';
 import 'package:khanak/global/constants.dart';
@@ -41,6 +42,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   @override
   void initState() {
     super.initState();
+    _amountController.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadBalance());
   }
 
@@ -80,9 +82,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (balance == null) return showErrorToast(module.error ?? 'error_generic'.tr());
-    showSuccessToast(
-      'txn_saved'.tr(namedArgs: {'kind': widget.kind.displayName, 'balance': _balanceText(balance)}),
-    );
+    showSuccessToast('txn_saved'.tr(namedArgs: {'kind': widget.kind.displayName, 'balance': _balanceText(balance)}));
     Navigator.of(context).pop(true);
   }
 
@@ -96,63 +96,62 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     final colors = context.colors;
     final balance = _balance;
 
+    final amount = double.tryParse(_amountController.text) ?? 0;
+
     return Scaffold(
-      appBar: AppBar(title: Text(widget.kind.displayName)),
+      extendBody: true,
+      appBar: AppBar(
+        title: Text(widget.kind.displayName),
+        actions: [DatePill(value: _date, onChanged: (d) => setState(() => _date = d))],
+      ),
+      bottomNavigationBar: SaveBar(
+        label: 'save'.tr(),
+        trailing: amount > 0 ? Formatters.formatCurrency(amount) : null,
+        isLoading: _busy,
+        onPressed: _submit,
+      ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.all(AppTheme.spaceLg),
+          padding: const EdgeInsets.fromLTRB(
+            AppTheme.spaceXl,
+            AppTheme.spaceSm,
+            AppTheme.spaceXl,
+            AppTheme.fabClearance,
+          ),
           children: [
-            AppCard(
-              child: Row(
-                children: [
-                  InitialBadge(letter: widget.worker.initial, size: 48),
-                  const SizedBox(width: AppTheme.spaceMd),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(widget.worker.displayName, style: context.text.titleMedium),
-                        const SizedBox(height: AppTheme.spaceXs),
-                        if (balance == null)
-                          Text('loading'.tr(), style: context.text.bodySmall)
-                        else
-                          Text(
-                            _balanceText(balance),
-                            style: context.text.titleSmall?.copyWith(color: balance >= 0 ? colors.danger : colors.success),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+            GroupedSection(
+              children: [
+                GroupedRow(
+                  leading: InitialBadge(letter: widget.worker.initial, size: 40),
+                  title: widget.worker.displayName,
+                  subtitle: balance == null ? 'loading'.tr() : null,
+                  trailing: balance == null ? null : BalanceText(balance: balance),
+                ),
+              ],
             ),
-            const SizedBox(height: AppTheme.spaceLg),
-            Text('txn_help_${widget.kind.value}'.tr(), style: context.text.bodyMedium),
-            const SizedBox(height: AppTheme.spaceLg),
-            AppTextField(
+            const SizedBox(height: AppTheme.space3xl),
+            BigNumberField(
               controller: _amountController,
-              labelText: 'amount'.tr(),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [DecimalInputFormatter(decimals: 2)],
-              prefixText: '₹ ',
+              label: 'amount'.tr(),
+              prefix: '₹',
+              decimal: true,
               autofocus: widget.kind == TxnKind.advance,
+              quickAdds: widget.kind == TxnKind.advance ? const [500, 1000, 2000] : const [],
               validator: (v) => Validators.amount(v, fieldLabel: 'amount'.tr(), allowZero: false),
             ),
             const SizedBox(height: AppTheme.spaceLg),
-            DateField(label: 'date'.tr(), value: _date, onChanged: (d) => setState(() => _date = d)),
-            const SizedBox(height: AppTheme.spaceLg),
-            AppTextField(
-              controller: _noteController,
-              labelText: 'note_optional'.tr(),
-              textCapitalization: TextCapitalization.sentences,
-            ),
+            Text('txn_help_${widget.kind.value}'.tr(), textAlign: TextAlign.center, style: context.text.bodySmall),
             if (core.isSupervisor && widget.kind == TxnKind.advance) ...[
-              const SizedBox(height: AppTheme.spaceMd),
-              Text('advance_from_your_cash'.tr(), style: context.text.bodySmall),
+              const SizedBox(height: AppTheme.spaceXs),
+              Text(
+                'advance_from_your_cash'.tr(),
+                textAlign: TextAlign.center,
+                style: context.text.bodySmall?.copyWith(color: colors.warning),
+              ),
             ],
             const SizedBox(height: AppTheme.space2xl),
-            AppButton(text: 'save'.tr(), isLoading: _busy, onPressed: _submit),
+            NoteCard(controller: _noteController, hint: 'note_optional'.tr()),
           ],
         ),
       ),

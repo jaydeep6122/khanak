@@ -4,6 +4,7 @@ import 'package:khanak/api/modules/auth.dart';
 import 'package:khanak/api/modules/entry.dart';
 import 'package:khanak/api/modules/factory.dart';
 import 'package:khanak/api/modules/report.dart';
+import 'package:khanak/api/modules/trade.dart';
 import 'package:khanak/api/modules/worker.dart';
 
 class Api {
@@ -16,6 +17,7 @@ class Api {
   late final WorkerApi worker;
   late final EntryApi entry;
   late final ReportApi report;
+  late final TradeApi trade;
 
   Api._internal(Dio dio) {
     app = AppApi(dio);
@@ -24,6 +26,7 @@ class Api {
     worker = WorkerApi(dio);
     entry = EntryApi(dio);
     report = ReportApi(dio);
+    trade = TradeApi(dio);
   }
 
   static void initialize(Dio dio) {

@@ -1,4 +1,4 @@
-import { addWorker, balanceOf, closeDb, createFactory, data, factoryClient, molder, setRates, signup, today } from "./helpers.js";
+import { addWorker, balanceOf, closeDb, createFactory, data, factoryClient, molder, setRates, signup, today, carried } from "./helpers.js";
 
 // Every worker has a main kind of work, and molders and day workers each
 // have their own rate.
@@ -29,8 +29,9 @@ describe("main work and each worker's own rate", () => {
     const mukesh = await addWorker(f, "Mukesh", molder(600));
     expect(ramesh).toMatchObject({ main_work: "molder", rate: "550.00" });
 
+    const groups = await carried(f);
     const count = (molderId) =>
-      f.post("/brick-counts", { counted_on: today(), reason: "drying", quantity: 10000, molder_id: molderId }, 201);
+      f.post("/brick-counts", { counted_on: today(), reason: "drying_by_workers", groups, quantity: 10000, molder_id: molderId }, 201);
     expect(data(await count(ramesh.id)).molder_pay.amount).toBe("5500.00");
     const mukeshCount = data(await count(mukesh.id));
     expect(mukeshCount.molder_pay.amount).toBe("6000.00");
@@ -39,7 +40,7 @@ describe("main work and each worker's own rate", () => {
     const fixed = data(
       await f.put(
         `/brick-counts/${mukeshCount.id}`,
-        { counted_on: today(), reason: "drying", quantity: 10000, molder_id: ramesh.id },
+        { counted_on: today(), reason: "drying_by_workers", groups: await carried(f), quantity: 10000, molder_id: ramesh.id },
         200,
       ),
     );

@@ -28,9 +28,9 @@ class BalanceText extends StatelessWidget {
         if (amount.isNotEmpty)
           Text(
             amount,
-            style: (large ? context.text.headlineMedium : context.text.titleMedium)?.copyWith(
+            style: (large ? context.text.headlineMedium : context.text.bodyLarge)?.copyWith(
               color: color,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
         Text(label, style: (large ? context.text.bodyLarge : context.text.bodySmall)?.copyWith(color: color)),

@@ -50,8 +50,8 @@ class _AppSearchBarState extends State<AppSearchBar> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(AppTheme.radiusMd),
-      borderSide: BorderSide(color: colors.border),
+      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+      borderSide: BorderSide.none,
     );
 
     return TextField(
@@ -62,8 +62,10 @@ class _AppSearchBarState extends State<AppSearchBar> {
       decoration: InputDecoration(
         hintText: widget.hintText,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-        prefixIcon: const Icon(Icons.search_rounded, size: 22),
+        filled: true,
+        fillColor: colors.surfaceAlt,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        prefixIcon: Icon(Icons.search_rounded, size: 21, color: colors.muted),
         suffixIcon: _controller.text.isEmpty
             ? null
             : IconButton(
@@ -73,9 +75,7 @@ class _AppSearchBarState extends State<AppSearchBar> {
               ),
         border: border,
         enabledBorder: border,
-        focusedBorder: border.copyWith(
-          borderSide: BorderSide(color: colors.primary, width: 1.6),
-        ),
+        focusedBorder: border,
       ),
     );
   }

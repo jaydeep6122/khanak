@@ -54,6 +54,16 @@ class HomeSummary {
   final double advancesInPeriod;
   final double advancesToday;
 
+  /// What customers owe the factory, and what it owes suppliers.
+  final double marketCredit;
+  final double owedToSuppliers;
+  final int bricksSoldToday;
+  final double salesToday;
+  final int bricksSoldInPeriod;
+  final double salesInPeriod;
+  final double expensesToday;
+  final double expensesInPeriod;
+
   const HomeSummary({
     this.period,
     required this.stock,
@@ -66,6 +76,14 @@ class HomeSummary {
     required this.wagesInPeriod,
     required this.advancesInPeriod,
     required this.advancesToday,
+    this.marketCredit = 0,
+    this.owedToSuppliers = 0,
+    this.bricksSoldToday = 0,
+    this.salesToday = 0,
+    this.bricksSoldInPeriod = 0,
+    this.salesInPeriod = 0,
+    this.expensesToday = 0,
+    this.expensesInPeriod = 0,
   });
 
   factory HomeSummary.fromJson(Map<String, dynamic> json) {
@@ -73,6 +91,9 @@ class HomeSummary {
     final workers = asMap(json['workers']);
     final bricks = asMap(json['bricks']);
     final money = asMap(json['money']);
+    final credit = asMap(json['credit']);
+    final sales = asMap(json['sales']);
+    final expenses = asMap(json['expenses']);
     return HomeSummary(
       period: period == null ? null : Period.fromJson(period),
       stock: BrickStock.fromJson(asMap(json['stock'])),
@@ -85,6 +106,14 @@ class HomeSummary {
       wagesInPeriod: asDouble(money['wages_in_period']),
       advancesInPeriod: asDouble(money['advances_in_period']),
       advancesToday: asDouble(money['advances_today']),
+      marketCredit: asDouble(credit['receivable']),
+      owedToSuppliers: asDouble(credit['payable']),
+      bricksSoldToday: asInt(sales['bricks_today']),
+      salesToday: asDouble(sales['amount_today']),
+      bricksSoldInPeriod: asInt(sales['bricks_in_period']),
+      salesInPeriod: asDouble(sales['amount_in_period']),
+      expensesToday: asDouble(expenses['today']),
+      expensesInPeriod: asDouble(expenses['in_period']),
     );
   }
 }

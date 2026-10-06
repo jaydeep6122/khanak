@@ -8,6 +8,8 @@ import 'package:khanak/components/textInputDialog.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/global/themes.dart';
 import 'package:khanak/helpers/toastNotifications.dart';
+import 'package:khanak/helpers/navigation.dart';
+import 'package:khanak/screens/trade/truckReport.dart';
 import 'package:khanak/types/factory.dart';
 
 /// The factory's own trucks, picked when bricks go to the kiln by truck.
@@ -68,12 +70,19 @@ class _TrucksScreenState extends State<TrucksScreen> {
                 children: [
                   for (final truck in trucks) ...[
                     AppCard(
-                      onTap: () => _edit(truck),
+                      // The report shows what the truck earns; the number is
+                      // changed from the pencil.
+                      onTap: () => Navigator.of(context).push(getPageRoute(TruckReportScreen(truck: truck))),
                       child: Row(
                         children: [
                           Icon(Icons.local_shipping_rounded, color: truck.isActive ? colors.primary : colors.muted),
                           const SizedBox(width: AppTheme.spaceMd),
                           Expanded(child: Text(truck.label, style: context.text.titleMedium)),
+                          IconButton(
+                            tooltip: 'truck_edit'.tr(),
+                            icon: Icon(Icons.edit_rounded, color: colors.muted, size: 20),
+                            onPressed: () => _edit(truck),
+                          ),
                           Switch(value: truck.isActive, onChanged: (_) => _toggle(truck)),
                         ],
                       ),
