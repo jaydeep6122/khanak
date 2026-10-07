@@ -11,6 +11,7 @@ import 'package:khanak/global/constants.dart';
 import 'package:khanak/global/themes.dart';
 import 'package:khanak/helpers/formatters.dart';
 import 'package:khanak/helpers/navigation.dart';
+import 'package:khanak/helpers/support.dart';
 import 'package:khanak/screens/auth/login.dart';
 import 'package:khanak/screens/cash/detail.dart';
 import 'package:khanak/screens/cash/list.dart';
@@ -23,6 +24,7 @@ import 'package:khanak/screens/more/members.dart';
 import 'package:khanak/screens/more/season.dart';
 import 'package:khanak/screens/more/trucks.dart';
 import 'package:khanak/screens/settings/language.dart';
+import 'package:khanak/screens/settings/profile.dart';
 
 /// Everything that is not an everyday entry, with a one-line description so
 /// it is clear what each row is for.
@@ -182,12 +184,49 @@ class MoreTab extends StatelessWidget {
                     caption: 'app'.tr(),
                     rows: [
                       _Row(
+                        Tint.bricks,
+                        Icons.person_rounded,
+                        'profile'.tr(),
+                        core.auth.user?.name ?? '',
+                        () => open(const ProfileScreen()),
+                      ),
+                      _Row(
                         Tint.truck,
                         Icons.translate_rounded,
                         'language'.tr(),
                         core.settings.language?.nativeName ?? '',
                         () => open(const LanguageScreen()),
                       ),
+                    ],
+                  ),
+                  _Group(
+                    caption: 'help'.tr(),
+                    rows: [
+                      _Row(
+                        Tint.money,
+                        Icons.chat_rounded,
+                        'contact_us'.tr(),
+                        'contact_us_desc'.tr(),
+                        openSupportChat,
+                      ),
+                      _Row(
+                        Tint.neutral,
+                        Icons.description_outlined,
+                        'terms'.tr(),
+                        '',
+                        () => openLegalPage(LegalPage.terms),
+                      ),
+                      _Row(
+                        Tint.neutral,
+                        Icons.privacy_tip_outlined,
+                        'privacy_policy'.tr(),
+                        '',
+                        () => openLegalPage(LegalPage.privacy),
+                      ),
+                    ],
+                  ),
+                  _Group(
+                    rows: [
                       _Row(
                         Tint.neutral,
                         Icons.logout_rounded,
@@ -220,10 +259,10 @@ class _Row {
 }
 
 class _Group extends StatelessWidget {
-  final String caption;
+  final String? caption;
   final List<_Row> rows;
 
-  const _Group({required this.caption, required this.rows});
+  const _Group({this.caption, required this.rows});
 
   @override
   Widget build(BuildContext context) {

@@ -74,6 +74,11 @@ class AuthApi {
     return dataOf(response);
   }
 
+  /// Wipes the account and signs it out on every device.
+  Future<void> deleteAccount({required String password}) async {
+    await _dio.post('/auth/me/delete', data: {'password': password});
+  }
+
   /// Always succeeds, whether or not the email is registered.
   Future<void> forgotPassword(String email) async {
     await _dio.post('/auth/password/forgot', data: {'email': email});

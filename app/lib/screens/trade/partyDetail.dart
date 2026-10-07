@@ -8,6 +8,7 @@ import 'package:khanak/components/groupedSection.dart';
 import 'package:khanak/components/loadStateBody.dart';
 import 'package:khanak/components/loadingIndicator.dart';
 import 'package:khanak/components/pageHeader.dart';
+import 'package:khanak/components/optionSheet.dart';
 import 'package:khanak/components/tint.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/core/components/getters.dart';
@@ -72,6 +73,22 @@ class _PartyDetailScreenState extends State<PartyDetailScreen> {
         return _push(SaleFormScreen(saleId: line.entryId));
       case 'expense':
         return _push(ExpenseFormScreen(expenseId: line.entryId));
+    }
+    final party = context.read<Core>().trade.party(widget.partyId).value;
+    if (party == null) return;
+    final action = await pickOption<String>(
+      context,
+      title: line.title,
+      options: const ['edit', 'cancel'],
+      label: (a) => a == 'edit' ? 'edit_payment'.tr() : 'cancel_entry'.tr(),
+      leading: (a) => TintIcon(
+        tint: a == 'edit' ? Tint.money : Tint.neutral,
+        icon: a == 'edit' ? Icons.edit_rounded : Icons.block_rounded,
+      ),
+    );
+    if (action == null || !mounted) return;
+    if (action == 'edit') {
+      return _push(PaymentFormScreen(party: party, kind: line.kind, paymentId: line.entryId));
     }
     final reason = await showReasonDialog(
       context,

@@ -5,6 +5,7 @@ import 'package:khanak/components/appButton.dart';
 import 'package:khanak/components/appTextField.dart';
 import 'package:khanak/core/Core.dart';
 import 'package:khanak/global/themes.dart';
+import 'package:khanak/helpers/support.dart';
 import 'package:khanak/helpers/toastNotifications.dart';
 import 'package:khanak/helpers/validators.dart';
 import 'package:khanak/screens/auth/authLayout.dart';
@@ -116,6 +117,15 @@ class _SignupScreenState extends State<SignupScreen> {
             ),
             const SizedBox(height: AppTheme.space2xl),
             AppButton(text: 'create_account'.tr(), isLoading: _busy, onPressed: _submit),
+            const SizedBox(height: AppTheme.spaceMd),
+            Text('signup_agree'.tr(), textAlign: TextAlign.center, style: context.text.bodySmall),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                TextButton(onPressed: () => openLegalPage(LegalPage.terms), child: Text('terms'.tr())),
+                TextButton(onPressed: () => openLegalPage(LegalPage.privacy), child: Text('privacy_policy'.tr())),
+              ],
+            ),
           ],
         ),
       ),

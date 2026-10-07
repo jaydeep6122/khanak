@@ -1,4 +1,4 @@
-import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import pool from "../../db/db.js";
 import { setClause } from "../../db/sql.js";
 import { withTransaction } from "../../db/transaction.js";
@@ -265,5 +265,51 @@ export async function changePassword(userId, { current_password, new_password, d
     );
     await audit(client, { userId, action: "change_password", entityType: "user", entityId: userId });
     return startSession(client, userId, device_info);
+  });
+}
+
+// ---- Deleting an account -----------------------------------------------------
+
+/**
+ * Deletes the caller's own account after checking their password. Entries
+ * they made stay in the books (nothing is deleted), so the user row is kept
+ * but stripped of name, email and phone, and can never sign in again. Every
+ * factory they own is archived, which closes it for its munims and
+ * supervisors too; their place in anyone else's factory is removed.
+ */
+export async function deleteAccount(userId, { password }) {
+  const {
+    rows: [user],
+  } = await pool.query("SELECT password_hash FROM users WHERE id = $1", [userId]);
+  if (!(await verifyPassword(password, user.password_hash))) {
+    throw new ApiError(400, "Password is incorrect");
+  }
+
+  await withTransaction(async (client) => {
+    const { rows: owned } = await client.query(
+      `UPDATE factories f SET archived_at = now()
+       FROM factory_members m
+       WHERE m.factory_id = f.id AND m.user_id = $1 AND m.role = 'owner' AND m.status = 'active'
+         AND f.archived_at IS NULL
+       RETURNING f.id`,
+      [userId],
+    );
+    for (const { id } of owned) {
+      await audit(client, { factoryId: id, userId, action: "archive", entityType: "factory", entityId: id, before: { reason: "account_deleted" } });
+    }
+
+    await client.query("UPDATE factory_members SET status = 'removed' WHERE user_id = $1 AND status = 'active'", [userId]);
+    await client.query("DELETE FROM password_resets WHERE user_id = $1", [userId]);
+    await client.query("DELETE FROM refresh_tokens WHERE user_id = $1", [userId]);
+    // A random hash nobody knows the password for, and an address nobody owns,
+    // so the old email is free to sign up again.
+    await client.query(
+      `UPDATE users
+       SET name = 'Deleted user', email = 'deleted-' || id || '@deleted.invalid', phone = NULL,
+           password_hash = $2, is_active = false, deleted_at = now()
+       WHERE id = $1`,
+      [userId, `deleted$${randomBytes(32).toString("base64")}`],
+    );
+    await audit(client, { userId, action: "delete_account", entityType: "user", entityId: userId });
   });
 }

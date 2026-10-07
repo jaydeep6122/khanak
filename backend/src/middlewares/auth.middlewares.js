@@ -30,10 +30,11 @@ export async function requireAuth(req, res, next) {
   const {
     rows: [user],
   } = await pool.query(
-    "SELECT id, name, email, phone, is_active FROM users WHERE id = $1",
+    "SELECT id, name, email, phone, is_active, deleted_at FROM users WHERE id = $1",
     [payload.sub],
   );
-  if (!user) throw new ApiError(401, "Invalid access token");
+  // A deleted account is signed out, not shown as suspended.
+  if (!user || user.deleted_at) throw new ApiError(401, "Invalid access token");
   if (!user.is_active) throw new ApiError(403, "User account is suspended");
 
   req.user = user;

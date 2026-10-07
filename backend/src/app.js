@@ -10,6 +10,7 @@ import appRouter from "./v1/app/app.routes.js";
 import authRouter from "./v1/auth/auth.routes.js";
 import factoriesRouter from "./v1/factories/factories.routes.js";
 import publicRouter from "./v1/public/public.routes.js";
+import legalRouter from "./legal/legal.routes.js";
 import pool from "./db/db.js";
 
 const app = express();
@@ -58,7 +59,13 @@ app.use(
 
 // Password guessing gets a much smaller budget than normal API use.
 app.use(
-  ["/v1/auth/login", "/v1/auth/signup", "/v1/auth/password/forgot", "/v1/auth/password/reset"],
+  [
+    "/v1/auth/login",
+    "/v1/auth/signup",
+    "/v1/auth/password/forgot",
+    "/v1/auth/password/reset",
+    "/v1/auth/me/delete",
+  ],
   rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 20,
@@ -99,6 +106,8 @@ app.get("/health", async (req, res) => {
   }
 });
 
+// Unauthenticated web pages: terms, privacy policy, deleting an account.
+app.use("/legal", legalRouter);
 // Unauthenticated: which app builds may still be used.
 app.use("/v1/app", appRouter);
 // Everything after this is refused while MAINTENANCE_MODE is "true".

@@ -52,6 +52,7 @@ The schema lives only in `migrations/` and is managed with [node-pg-migrate](htt
 - **Seasons.** One period is open at a time: a season or the off-season between seasons. Every entry belongs to the latest period that had started on its date. Balances, credit and stock carry across.
 - **Amounts never touch JS floats.** They arrive and leave as decimal strings (`"4720.00"`) and are computed with `decimal.js`.
 - **Nothing is deleted.** Entries are cancelled and stay on record, and `audit_log` keeps who created, changed or cancelled what.
+- **Deleting an account** (`POST /v1/auth/me/delete` with the password) wipes the user's name, email and phone, signs them out everywhere and removes them from every factory. Factories they own are archived, closing them for their munims and supervisors too. Their entries stay in the books.
 
 ## Roles
 
@@ -77,7 +78,7 @@ Authenticated routes need `Authorization: Bearer <access_token>`. Factory routes
 
 | Area | Routes |
 |---|---|
-| Auth | `POST /v1/auth/signup`, `/login`, `/refresh`, `/logout` · `GET/PATCH /v1/auth/me` · `POST /v1/auth/me/password` · `POST /v1/auth/password/forgot`, `/password/reset` |
+| Auth | `POST /v1/auth/signup`, `/login`, `/refresh`, `/logout` · `GET/PATCH /v1/auth/me` · `POST /v1/auth/me/password` · `POST /v1/auth/me/delete` · `POST /v1/auth/password/forgot`, `/password/reset` |
 | Factories | `POST/GET /v1/factories` · `GET/PATCH/DELETE /:factoryId` · `GET /subscription` |
 | Members | `GET/POST /members` · `PATCH/DELETE /members/:userId` |
 | Seasons | `GET /periods` · `GET /periods/current` · `POST /periods/start-season`, `/end-season` · `PATCH /periods/:id` |
@@ -91,11 +92,12 @@ Authenticated routes need `Authorization: Bearer <access_token>`. Factory routes
 | Trucks | `GET/POST /trucks` · `PATCH /trucks/:id` · `GET /trucks/:id/report` (trips, delivery charges, diesel and its average, profit) |
 | Sales | `GET/POST /sales` · `GET /sales/last-rate` · `GET/PUT /sales/:id` · `POST /sales/:id/cancel` |
 | Expenses | `GET/POST /expenses` · `GET/PUT /expenses/:id` · `POST /expenses/:id/cancel` |
-| Customers, suppliers | `GET/POST /parties` · `GET/PATCH /parties/:id` · `GET /parties/:id/ledger` · `POST /parties/:id/payments` · `PUT /party-payments/:id` · `POST /party-payments/:id/cancel` |
+| Customers, suppliers | `GET/POST /parties` · `GET/PATCH /parties/:id` · `GET /parties/:id/ledger` · `POST /parties/:id/payments` · `GET/PUT /party-payments/:id` · `POST /party-payments/:id/cancel` |
 | Supervisor cash | `GET /cash` · `GET /cash/:holderId` · `POST /cash/handovers` · `POST /cash/handovers/:id/cancel` · `POST /cash/:holderId/settle` |
 | Reports | `GET /reports/summary`, `/stock`, `/activity` |
 | Public | `GET /v1/public/workers/:token` (a worker's own link, no login) |
-| App | `GET /v1/app/version?platform=android` |
+| App | `GET /v1/app/version?platform=android` · `GET /v1/app/support` (WhatsApp number, terms and privacy links) |
+| Web pages | `GET /legal/terms`, `/legal/privacy`, `/legal/delete-account` (no sign-in; for the app and the Play Store listing) |
 
 ### A brick count
 
