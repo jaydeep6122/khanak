@@ -2,6 +2,7 @@ import 'package:khanak/api/api.dart';
 import 'package:khanak/core/components/getters.dart';
 import 'package:khanak/core/components/moduleBase.dart';
 import 'package:khanak/helpers/json.dart';
+import 'package:khanak/types/factory.dart';
 import 'package:khanak/types/work.dart';
 import 'package:khanak/types/worker.dart';
 
@@ -62,6 +63,35 @@ class WorkerModule extends CoreModule {
       more: more,
     );
   }
+
+  /// Every line of the account, for a statement: [period] only, or the
+  /// whole account when null.
+  Future<WorkerStatement?> fetchStatement(String workerId, {Period? period}) => runSave(() async {
+    const pageSize = 200;
+    final lines = <LedgerLine>[];
+    var totals = LedgerTotals.empty;
+    var balance = 0.0;
+    for (var offset = 0; ; offset += pageSize) {
+      final page = await Api.instance.worker.ledger(
+        core.factoryId,
+        workerId,
+        periodId: period?.id,
+        offset: offset,
+        limit: pageSize,
+      );
+      totals = LedgerTotals.fromJson(page.totals);
+      balance = asDouble(page.balance);
+      lines.addAll(page.page.items.map(LedgerLine.fromJson));
+      if (page.page.items.length < pageSize) break;
+    }
+    return WorkerStatement(
+      // The ledger comes newest first; a statement reads oldest first.
+      lines: lines.reversed.toList(),
+      totals: totals,
+      balance: balance,
+      from: period?.startedOn,
+    );
+  });
 
   /// The balance only: what a supervisor sees before giving an advance.
   Future<double?> fetchBalance(String workerId) async {

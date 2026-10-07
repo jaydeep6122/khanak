@@ -1,5 +1,6 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:khanak/global/constants.dart';
+import 'package:khanak/helpers/formatters.dart';
 import 'package:khanak/helpers/json.dart';
 
 // The names the server gives the built-in kinds of work. While the owner has
@@ -155,6 +156,32 @@ class LedgerLine {
   double get amount => credit - debit;
 
   String get title => isWork ? workTypeLabel(workTypeCode, workTypeName ?? '') : txnKind!.displayName;
+
+  /// "22,000 × ₹550 / 1000", "6 days × ₹400", "share of ₹2,200 (2 workers)",
+  /// and the note.
+  String? get detail {
+    if (!isWork) return note;
+    final parts = <String>[];
+    final unit = payUnit;
+    if (quantity != null && rate != null && unit != null && unit != PayUnit.perMonth) {
+      parts.add(
+        'line_qty_rate'.tr(
+          namedArgs: {
+            'quantity': Formatters.formatCount(quantity!),
+            'rate': Formatters.formatCurrency(rate!),
+            'unit': 'pay_unit_${unit.value}'.tr(),
+          },
+        ),
+      );
+    }
+    if (groupSize != null && groupSize! > 1) {
+      parts.add(
+        'line_share'.tr(namedArgs: {'total': Formatters.formatCurrency(groupTotal ?? 0), 'count': '$groupSize'}),
+      );
+    }
+    if (note != null) parts.add(note!);
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
 }
 
 /// What a worker's account adds up to.
@@ -174,6 +201,25 @@ class LedgerTotals {
   );
 
   static const empty = LedgerTotals(earned: 0, advances: 0, settled: 0, recovered: 0);
+}
+
+/// A worker's account over a stretch of time, to print: every line, oldest
+/// first, what they add up to, and what was owed before the first one.
+class WorkerStatement {
+  /// Oldest first.
+  final List<LedgerLine> lines;
+  final LedgerTotals totals;
+
+  /// What the factory owes the worker now (negative: what the worker owes).
+  final double balance;
+
+  /// Null for the whole account, else when the stretch began.
+  final DateTime? from;
+
+  const WorkerStatement({required this.lines, required this.totals, required this.balance, this.from});
+
+  /// Carried in from before [from]: the balance now, less every line since.
+  double get opening => balance - lines.fold(0.0, (sum, line) => sum + line.amount);
 }
 
 /// One worker's share in group work.

@@ -9,6 +9,7 @@ import 'package:khanak/components/errorWidget.dart';
 import 'package:khanak/components/groupedSection.dart';
 import 'package:khanak/components/loadStateBody.dart';
 import 'package:khanak/components/loadingIndicator.dart';
+import 'package:khanak/components/optionSheet.dart';
 import 'package:khanak/components/pageHeader.dart';
 import 'package:khanak/components/segmentedControl.dart';
 import 'package:khanak/components/tint.dart';
@@ -26,6 +27,7 @@ import 'package:khanak/screens/entries/brickCountForm.dart';
 import 'package:khanak/screens/entries/unloadingForm.dart';
 import 'package:khanak/screens/entries/workEntryForm.dart';
 import 'package:khanak/screens/workers/form.dart';
+import 'package:khanak/screens/workers/statement.dart';
 import 'package:khanak/screens/workers/transactionForm.dart';
 import 'package:khanak/types/work.dart';
 import 'package:khanak/types/worker.dart';
@@ -80,10 +82,33 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
     }
   }
 
+  /// This season's statement or the whole account's, when a season is open.
+  Future<void> _openStatement(Worker worker) async {
+    final period = context.read<Core>().openFactory?.period;
+    final season = period?.kind == PeriodKind.season ? period : null;
+    var wholeAccount = true;
+    if (season != null) {
+      final choice = await pickOption<bool>(
+        context,
+        title: 'statement_which'.tr(),
+        options: const [false, true],
+        label: (whole) => whole ? 'statement_whole'.tr() : (season.name ?? 'statement_this_season'.tr()),
+        leading: (whole) => TintIcon(tint: whole ? Tint.neutral : Tint.bricks, icon: Icons.receipt_long_rounded),
+      );
+      if (choice == null || !mounted) return;
+      wholeAccount = choice;
+    }
+    await Navigator.of(
+      context,
+    ).push(getPageRoute(StatementScreen(worker: worker, period: wholeAccount ? null : season)));
+  }
+
   Future<void> _menu(String action, Worker worker) async {
     final core = context.read<Core>();
     final module = core.worker;
     switch (action) {
+      case 'statement':
+        await _openStatement(worker);
       case 'edit':
         await _push(WorkerFormScreen(worker: worker));
       case 'other_work':
@@ -249,6 +274,7 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> {
                         child: PopupMenuButton<String>(
                           onSelected: (action) => _menu(action, worker),
                           itemBuilder: (_) => [
+                            PopupMenuItem(value: 'statement', child: Text('statement_share_menu'.tr())),
                             PopupMenuItem(value: 'edit', child: Text('worker_edit'.tr())),
                             PopupMenuItem(value: 'other_work', child: Text('action_other_work'.tr())),
                             PopupMenuItem(value: 'recovery', child: Text('txn_recovery'.tr())),
@@ -466,33 +492,6 @@ class _Lines extends StatelessWidget {
     required this.onRetry,
   });
 
-  /// "22,000 × ₹550 / 1000", "6 days × ₹400", "share of ₹2,200 (2 workers)".
-  String? _detail(LedgerLine line) {
-    if (!line.isWork) return line.note;
-    final parts = <String>[];
-    final unit = line.payUnit;
-    if (line.quantity != null && line.rate != null && unit != null && unit != PayUnit.perMonth) {
-      parts.add(
-        'line_qty_rate'.tr(
-          namedArgs: {
-            'quantity': Formatters.formatCount(line.quantity!),
-            'rate': Formatters.formatCurrency(line.rate!),
-            'unit': 'pay_unit_${unit.value}'.tr(),
-          },
-        ),
-      );
-    }
-    if (line.groupSize != null && line.groupSize! > 1) {
-      parts.add(
-        'line_share'.tr(
-          namedArgs: {'total': Formatters.formatCurrency(line.groupTotal ?? 0), 'count': '${line.groupSize}'},
-        ),
-      );
-    }
-    if (line.note != null) parts.add(line.note!);
-    return parts.isEmpty ? null : parts.join(' · ');
-  }
-
   Tint _tint(LedgerLine line) {
     if (line.brickCountId != null) return Tint.bricks;
     if (line.kilnUnloadingId != null) return Tint.fire;
@@ -540,7 +539,7 @@ class _Lines extends StatelessWidget {
                     chevron: false,
                     leading: TintIcon(tint: _tint(line)),
                     title: line.title,
-                    subtitle: _detail(line),
+                    subtitle: line.detail,
                     value: '${line.amount >= 0 ? '+' : '−'}${Formatters.formatCurrency(line.amount.abs())}',
                     valueColor: line.amount >= 0 ? colors.success : colors.danger,
                   ),
