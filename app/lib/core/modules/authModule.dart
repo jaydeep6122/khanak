@@ -156,6 +156,21 @@ class AuthModule extends CoreModule {
     } catch (_) {
       // Signing out locally must work even when the server is unreachable.
     }
+    await _endLocalSession();
+  }
+
+  /// Deletes the account for good once [password] is confirmed, then signs
+  /// out here (the server has already signed out every device).
+  Future<bool> deleteAccount(String password) async {
+    final done = await runSave(
+      () => Api.instance.auth.deleteAccount(password: password).then((_) => true),
+    );
+    if (done != true) return false;
+    await _endLocalSession();
+    return true;
+  }
+
+  Future<void> _endLocalSession() async {
     await SecureStorage.deleteAll();
     await clearBoxes();
     handleSessionExpired();

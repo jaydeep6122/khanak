@@ -42,6 +42,38 @@ class Party {
 }
 
 /// One line of a party's account.
+/// Money received from or paid to a party, or a customer's debt written off.
+class PartyPayment {
+  final String id;
+
+  /// received, paid or writeoff.
+  final String kind;
+  final DateTime paidOn;
+  final double amount;
+
+  /// cash, bank or upi.
+  final String mode;
+  final String? note;
+
+  const PartyPayment({
+    required this.id,
+    required this.kind,
+    required this.paidOn,
+    required this.amount,
+    required this.mode,
+    this.note,
+  });
+
+  factory PartyPayment.fromJson(Map<String, dynamic> json) => PartyPayment(
+    id: json['id'] as String,
+    kind: asString(json['kind']),
+    paidOn: asDate(json['paid_on']) ?? DateTime.now(),
+    amount: asDouble(json['amount']),
+    mode: asString(json['mode'], 'cash'),
+    note: json['note'] as String?,
+  );
+}
+
 class PartyLine {
   /// sale, truck_hire, expense, received, paid or writeoff.
   final String kind;

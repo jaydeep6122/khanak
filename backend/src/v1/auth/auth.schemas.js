@@ -52,3 +52,7 @@ export const resetPasswordSchema = z.object({
   new_password: password,
   device_info: deviceInfo,
 });
+
+export const deleteAccountSchema = z.object({
+  password: z.string().min(1, "Password is required").max(128),
+});

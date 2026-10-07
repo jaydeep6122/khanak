@@ -93,6 +93,13 @@ class TradeApi {
   Future<Map<String, dynamic>> addPayment(String factoryId, String partyId, Map<String, dynamic> data) async =>
       dataOf(await _dio.post('${_parties(factoryId)}/$partyId/payments', data: data));
 
+  Future<Map<String, dynamic>> payment(String factoryId, String paymentId) async =>
+      dataOf(await _dio.get('${factoryPath(factoryId)}/party-payments/$paymentId'));
+
+  /// Returns it with the party's new `balance`.
+  Future<Map<String, dynamic>> updatePayment(String factoryId, String paymentId, Map<String, dynamic> data) async =>
+      dataOf(await _dio.put('${factoryPath(factoryId)}/party-payments/$paymentId', data: data));
+
   Future<Map<String, dynamic>> cancelPayment(String factoryId, String paymentId, {String? reason}) async =>
       dataOf(await _dio.post('${factoryPath(factoryId)}/party-payments/$paymentId/cancel', data: {'reason': reason}));
 

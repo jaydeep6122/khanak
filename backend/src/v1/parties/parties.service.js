@@ -126,6 +126,17 @@ export async function addPayment(ctx, partyId, data) {
   });
 }
 
+export async function getPayment(ctx, paymentId) {
+  const {
+    rows: [payment],
+  } = await pool.query(`SELECT ${PAYMENT_COLUMNS} FROM party_payments WHERE factory_id = $1 AND id = $2`, [
+    ctx.factory.id,
+    paymentId,
+  ]);
+  if (!payment) throw notFound();
+  return payment;
+}
+
 async function lockPayment(client, ctx, paymentId) {
   const {
     rows: [payment],

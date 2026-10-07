@@ -17,4 +17,9 @@ class AppApi {
     );
     return dataOf(response);
   }
+
+  /// `{ whatsapp, terms_url, privacy_url, delete_account_url }`: where to get
+  /// help. `whatsapp` is digits with the country code, or null. Needs no
+  /// sign-in.
+  Future<Map<String, dynamic>> support() async => dataOf(await _dio.get('/app/support'));
 }

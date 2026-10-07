@@ -39,7 +39,11 @@ partiesRouter.post("/:partyId/payments", idParams("partyId"), validate(schemas.p
   created(res, await service.addPayment(context(req), req.params.partyId, req.body));
 });
 
-// /party-payments/:paymentId — editing and cancelling money received or paid.
+// /party-payments/:paymentId — reading, editing and cancelling money received or paid.
+partyPaymentsRouter.get("/:paymentId", idParams("paymentId"), async (req, res) => {
+  ok(res, await service.getPayment(context(req), req.params.paymentId));
+});
+
 partyPaymentsRouter.put("/:paymentId", idParams("paymentId"), validate(schemas.updatePaymentSchema), async (req, res) => {
   ok(res, await service.updatePayment(context(req), req.params.paymentId, req.body));
 });

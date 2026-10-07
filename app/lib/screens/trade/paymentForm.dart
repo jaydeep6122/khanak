@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:khanak/components/bigNumberField.dart';
 import 'package:khanak/components/initialBadge.dart';
+import 'package:khanak/components/loadingIndicator.dart';
 import 'package:khanak/components/formBits.dart';
 import 'package:khanak/components/groupedSection.dart';
 import 'package:khanak/components/saveBar.dart';
@@ -19,13 +20,15 @@ import 'package:khanak/types/trade.dart';
 
 /// Money with a customer or supplier after the sale or purchase: received
 /// from a customer, paid to a supplier, or a customer's debt written off.
+/// With [paymentId] it edits that payment.
 class PaymentFormScreen extends StatefulWidget {
   final Party party;
 
   /// received, paid or writeoff.
   final String kind;
+  final String? paymentId;
 
-  const PaymentFormScreen({super.key, required this.party, required this.kind});
+  const PaymentFormScreen({super.key, required this.party, required this.kind, this.paymentId});
 
   @override
   State<PaymentFormScreen> createState() => _PaymentFormScreenState();
@@ -41,11 +44,30 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
   DateTime _date = DateTime.now();
   String _mode = 'cash';
   bool _busy = false;
+  late bool _loading = widget.paymentId != null;
 
   @override
   void initState() {
     super.initState();
     _amountController.addListener(() => setState(() {}));
+    if (widget.paymentId != null) WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  Future<void> _load() async {
+    final trade = context.read<Core>().trade;
+    final payment = await trade.fetchPayment(widget.paymentId!);
+    if (!mounted) return;
+    if (payment == null) {
+      showErrorToast(trade.error ?? 'error_generic'.tr());
+      return Navigator.of(context).pop();
+    }
+    setState(() {
+      _amountController.text = Formatters.formatDouble(payment.amount);
+      _noteController.text = payment.note ?? '';
+      _date = payment.paidOn;
+      _mode = payment.mode;
+      _loading = false;
+    });
   }
 
   @override
@@ -60,13 +82,14 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
     if (!_formKey.currentState!.validate()) return;
     final trade = context.read<Core>().trade;
     setState(() => _busy = true);
-    final balance = await trade.addPayment(widget.party.id, {
-      'kind': widget.kind,
+    final balance = await trade.savePayment(widget.party.id, {
+      // The kind of a payment is fixed once it is made.
+      if (widget.paymentId == null) 'kind': widget.kind,
       'paid_on': apiDate(_date),
       'amount': apiAmount(_amountController.text),
       if (widget.kind != 'writeoff') 'mode': _mode,
       'note': _noteController.text.trim(),
-    });
+    }, paymentId: widget.paymentId);
     if (!mounted) return;
     setState(() => _busy = false);
     if (balance == null) return showErrorToast(trade.error ?? 'error_generic'.tr());
@@ -81,6 +104,10 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
       'paid' => 'payment_paid'.tr(),
       _ => 'writeoff'.tr(),
     };
+
+    if (_loading) {
+      return Scaffold(appBar: AppBar(title: Text(title)), body: const LoadingIndicator());
+    }
 
     final amount = double.tryParse(_amountController.text) ?? 0;
     final party = widget.party;
@@ -123,7 +150,7 @@ class _PaymentFormScreenState extends State<PaymentFormScreen> {
               label: 'amount'.tr(),
               prefix: '₹',
               decimal: true,
-              autofocus: true,
+              autofocus: widget.paymentId == null,
               validator: (v) => Validators.amount(v, fieldLabel: 'amount'.tr(), allowZero: false),
             ),
             if (widget.kind == 'writeoff') ...[

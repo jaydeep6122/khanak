@@ -50,4 +50,10 @@ router.post("/me/password", requireAuth, validate(schemas.changePasswordSchema),
   ok(res, await auth.changePassword(req.user.id, withDevice(req)));
 });
 
+// The body carries the password, so this is a POST rather than a DELETE.
+router.post("/me/delete", requireAuth, validate(schemas.deleteAccountSchema), async (req, res) => {
+  await auth.deleteAccount(req.user.id, req.body);
+  ok(res, { deleted: true });
+});
+
 export default router;

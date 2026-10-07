@@ -125,9 +125,19 @@ class TradeModule extends CoreModule {
         Party.fromJson,
       );
 
-  /// Returns the party's balance after it, or null when it failed.
-  Future<double?> addPayment(String partyId, Map<String, dynamic> data) async {
-    final json = await runSave(() => Api.instance.trade.addPayment(core.factoryId, partyId, data));
+  Future<PartyPayment?> fetchPayment(String paymentId) async {
+    final json = await runSave(() => Api.instance.trade.payment(core.factoryId, paymentId));
+    return json == null ? null : PartyPayment.fromJson(json);
+  }
+
+  /// A new payment, or a change to [paymentId]. Returns the party's balance
+  /// after it, or null when it failed.
+  Future<double?> savePayment(String partyId, Map<String, dynamic> data, {String? paymentId}) async {
+    final json = await runSave(
+      () => paymentId == null
+          ? Api.instance.trade.addPayment(core.factoryId, partyId, data)
+          : Api.instance.trade.updatePayment(core.factoryId, paymentId, data),
+    );
     if (json == null) return null;
     _changed();
     return asDouble(json['balance']);

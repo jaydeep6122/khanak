@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
 import { validate } from "../../middlewares/validation.middlewares.js";
-import { ok } from "../../utils/http.js";
+import { ok, publicBaseUrl } from "../../utils/http.js";
+import { supportWhatsApp } from "../../legal/legal.routes.js";
 import { underMaintenance } from "../../middlewares/maintenance.middlewares.js";
 
 // Read on every request so raising a minimum only needs the environment
@@ -29,5 +30,17 @@ router.get(
     });
   },
 );
+
+// Unauthenticated: where to get help, and the terms and privacy pages, so
+// the number can change without a new app release.
+router.get("/support", (req, res) => {
+  const legal = `${publicBaseUrl(req)}/legal`;
+  ok(res, {
+    whatsapp: supportWhatsApp(),
+    terms_url: `${legal}/terms`,
+    privacy_url: `${legal}/privacy`,
+    delete_account_url: `${legal}/delete-account`,
+  });
+});
 
 export default router;
