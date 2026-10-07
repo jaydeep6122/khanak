@@ -17,3 +17,7 @@ cd app && fvm flutter run --dart-define=API_BASE_URL=http://192.168.1.5:3000/v1
 ```
 
 Debug builds may use plain `http`; release builds need the API on `https`.
+
+## Checks
+
+Every pull request and every push to `main` runs [CI](.github/workflows/ci.yml): the backend tests against a fresh Postgres, and `flutter analyze` and `flutter test` for the app.
