@@ -4,7 +4,7 @@ The Android app for Khanak, in Flutter. It speaks Gujarati, Hindi and English an
 
 ## Running it
 
-Flutter is run through [fvm](https://fvm.app). CI uses Flutter 3.47.6 ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).
+Flutter is run through [fvm](https://fvm.app). CI uses Flutter 3.35.7 (Dart 3.9.2) ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).
 
 ```bash
 fvm flutter pub get
